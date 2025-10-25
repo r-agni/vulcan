@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video AI Surveillance Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Video AI Surveillance System</h1>
+            <div class="status" id="status">
+                <span class="status-indicator"></span>
+                <span id="status-text">Initializing...</span>
+            </div>
+        </header>
+
+        <main class="dashboard">
+            <!-- Live Video Feed -->
+            <section class="video-section">
+                <h2>Live Camera Feed</h2>
+                <div class="video-container">
+                    <img id="video-feed" src="/video_feed" alt="Live Video Feed">
+                    <div class="video-overlay" id="detection-overlay">
+                        <div class="detection-badge">No Detection</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sidebar with Person Profile -->
+            <aside class="sidebar">
+                <div class="profile-section" id="profile-section">
+                    <h2>Detected Person</h2>
+                    <div class="no-detection" id="no-detection">
+                        <p>No person currently detected</p>
+                        <div class="detection-icon">👤</div>
+                    </div>
+
+                    <div class="person-profile hidden" id="person-profile">
+                        <div class="profile-header">
+                            <img id="profile-thumbnail" src="" alt="Person Thumbnail" class="profile-thumbnail">
+                            <div class="profile-info">
+                                <h3 id="profile-name">Unknown</h3>
+                                <span class="badge" id="new-badge">NEW</span>
+                                <p class="person-id">ID: <span id="profile-id">-</span></p>
+                            </div>
+                        </div>
+
+                        <div class="profile-stats">
+                            <div class="stat">
+                                <label>Visit Count:</label>
+                                <span id="visit-count">0</span>
+                            </div>
+                            <div class="stat">
+                                <label>First Seen:</label>
+                                <span id="first-seen">-</span>
+                            </div>
+                            <div class="stat">
+                                <label>Last Seen:</label>
+                                <span id="last-seen">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Analysis Section -->
+                <div class="analysis-section" id="analysis-section">
+                    <h2>Live Analysis</h2>
+                    <div class="analysis-status" id="analysis-status">
+                        <p>Waiting for detection...</p>
+                    </div>
+
+                    <div class="analysis-content hidden" id="analysis-content">
+                        <div class="analysis-item">
+                            <h4>Behavior Analysis</h4>
+                            <div class="analysis-text" id="behavior-analysis">
+                                Analyzing...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+
+        <!-- Person Database -->
+        <section class="database-section">
+            <h2>Person Database</h2>
+            <div class="database-controls">
+                <button onclick="loadAllPersons()" class="btn">Refresh Database</button>
+                <span id="person-count">0 persons in database</span>
+            </div>
+            <div class="person-grid" id="person-grid">
+                <!-- Person cards will be inserted here -->
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

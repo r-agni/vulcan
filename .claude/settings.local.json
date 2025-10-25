@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(python scripts/test_youtube.py:*)",
+      "Bash(pip install:*)",
+      "Bash(conda install:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

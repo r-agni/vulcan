@@ -1,0 +1,36 @@
+{
+  "virtual_lines": [
+    {
+      "name": "Store Entrance",
+      "start_point": {"x": 0.0, "y": 0.2},
+      "end_point": {"x": 0.3, "y": 0.2},
+      "count_direction": "both",
+      "color": "#EF4444",
+      "description": "Main entrance counting line"
+    },
+    {
+      "name": "Checkout Line 1",
+      "start_point": {"x": 0.7, "y": 0.8},
+      "end_point": {"x": 0.85, "y": 0.8},
+      "count_direction": "in",
+      "color": "#FBBF24",
+      "description": "First checkout counter"
+    },
+    {
+      "name": "Checkout Line 2",
+      "start_point": {"x": 0.85, "y": 0.8},
+      "end_point": {"x": 1.0, "y": 0.8},
+      "count_direction": "in",
+      "color": "#FBBF24",
+      "description": "Second checkout counter"
+    },
+    {
+      "name": "Exit",
+      "start_point": {"x": 0.0, "y": 0.0},
+      "end_point": {"x": 0.2, "y": 0.0},
+      "count_direction": "out",
+      "color": "#10B981",
+      "description": "Store exit"
+    }
+  ]
+}
