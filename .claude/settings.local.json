@@ -4,7 +4,9 @@
       "Bash(tree:*)",
       "Bash(python scripts/test_youtube.py:*)",
       "Bash(pip install:*)",
-      "Bash(conda install:*)"
+      "Bash(conda install:*)",
+      "Bash(set PYTHONIOENCODING=utf-8)",
+      "Read(//c/Users/agni_/**)"
     ],
     "deny": [],
     "ask": []

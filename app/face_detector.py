@@ -6,32 +6,43 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from database import Person, DetectionEvent
 import os
-from deepface import DeepFace
+import torch
+from facenet_pytorch import MTCNN, InceptionResnetV1
+from PIL import Image
 from scipy.spatial.distance import cosine
 
 
 class FaceDetector:
-    """Detect and recognize faces in video frames using DeepFace and OpenCV"""
+    """Detect and recognize faces in video frames using facenet-pytorch and MTCNN"""
 
     def __init__(self, tolerance: float = 0.4):
         """
-        Initialize face detector with DeepFace backend
+        Initialize face detector with facenet-pytorch backend
 
         Args:
             tolerance: Distance threshold for face matching (0.0-1.0, lower is stricter)
-                      Default 0.4 works well for DeepFace with cosine distance
+                      Default 0.4 works well for FaceNet embeddings with cosine distance
         """
         self.tolerance = tolerance
         self.known_face_encodings = []
         self.known_face_ids = []
 
+        # Device configuration (GPU if available)
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        print(f'Face detector running on device: {self.device}')
+
+        # Initialize MTCNN for face detection and alignment
+        self.mtcnn = MTCNN(keep_all=True, device=self.device)
+
+        # Initialize FaceNet model for embeddings (512-d vectors)
+        self.model = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
+
+        # Model name for compatibility
+        self.model_name = "FaceNet-InceptionResnetV1-512d"
+
         # Initialize OpenCV face detector (Haar Cascade) as fallback
         cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         self.face_cascade = cv2.CascadeClassifier(cascade_path)
-
-        # DeepFace model backend (options: VGG-Face, Facenet, OpenFace, DeepFace, DeepID, ArcFace, Dlib)
-        self.model_name = "Facenet"  # Facenet works well on Windows without dlib
-        self.detector_backend = "opencv"  # Use opencv instead of dlib
 
     def load_known_faces_from_db(self, db: Session):
         """Load all known face encodings from database"""
@@ -49,86 +60,75 @@ class FaceDetector:
 
     def detect_faces(self, frame: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
         """
-        Detect faces in a frame using DeepFace
+        Detect faces in a frame using facenet-pytorch and MTCNN
         Returns: List of (face_encoding, face_location) tuples
         """
         results = []
 
         try:
-            # Use DeepFace to detect and extract faces
-            # Convert BGR to RGB for DeepFace
+            # Convert BGR to RGB and create PIL Image for MTCNN
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_frame = Image.fromarray(rgb_frame)
 
-            # Detect faces using DeepFace
-            face_objs = DeepFace.extract_faces(
-                img_path=rgb_frame,
-                detector_backend=self.detector_backend,
-                enforce_detection=False,
-                align=True
-            )
+            # Detect faces using MTCNN
+            boxes, probs = self.mtcnn.detect(pil_frame)
 
-            for face_obj in face_objs:
-                # Get face location
-                facial_area = face_obj['facial_area']
-                x, y, w, h = facial_area['x'], facial_area['y'], facial_area['w'], facial_area['h']
+            if boxes is not None and len(boxes) > 0:
+                # Get aligned faces (automatically preprocessed)
+                faces = self.mtcnn(pil_frame)
 
-                # Convert to (top, right, bottom, left) format to match original API
-                face_location = (y, x + w, y + h, x)
+                if faces is not None and len(faces) > 0:
+                    # Generate embeddings for all faces at once
+                    embeddings = self.model(faces).detach().cpu().numpy()
 
-                # Extract face region for embedding
-                face_img = face_obj['face']
+                    for i, box in enumerate(boxes):
+                        x1, y1, x2, y2 = box  # MTCNN returns left, top, right, bottom
 
-                # Get face embedding using DeepFace
-                try:
-                    embedding_objs = DeepFace.represent(
-                        img_path=face_img,
-                        model_name=self.model_name,
-                        detector_backend=self.detector_backend,
-                        enforce_detection=False
-                    )
+                        # Skip very small faces (likely false positives)
+                        width, height = x2 - x1, y2 - y1
+                        if width < 50 or height < 50:
+                            continue
 
-                    if embedding_objs and len(embedding_objs) > 0:
-                        face_encoding = np.array(embedding_objs[0]['embedding'])
+                        # Convert to (top, right, bottom, left) format to match original API
+                        face_location = (int(y1), int(x2), int(y2), int(x1))
+
+                        # Get corresponding embedding
+                        face_encoding = embeddings[i]
+
                         results.append((face_encoding, face_location))
 
-                except Exception as e:
-                    print(f"Error generating face embedding: {e}")
-                    continue
-
         except Exception as e:
-            print(f"Error detecting faces: {e}")
-            # Fallback to OpenCV Haar Cascade if DeepFace fails
+            print(f"Error detecting faces with facenet-pytorch: {e}")
+            # Fallback to OpenCV Haar Cascade if facenet-pytorch fails
             results = self._detect_faces_opencv(frame)
 
         return results
 
     def _detect_faces_opencv(self, frame: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
         """
-        Fallback face detection using OpenCV Haar Cascade
+        Fallback face detection using OpenCV Haar Cascade + facenet-pytorch embeddings
         """
         results = []
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
 
         for (x, y, w, h) in faces:
-            # Extract face region
-            face_img = frame[y:y+h, x:x+w]
-
             # Convert to (top, right, bottom, left) format
             face_location = (y, x + w, y + h, x)
 
             try:
-                # Get embedding using DeepFace
-                embedding_objs = DeepFace.represent(
-                    img_path=cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB),
-                    model_name=self.model_name,
-                    detector_backend=self.detector_backend,
-                    enforce_detection=False
-                )
+                # Extract face region and convert to PIL for facenet-pytorch
+                face_img = frame[y:y+h, x:x+w]
+                pil_face = Image.fromarray(cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB))
 
-                if embedding_objs and len(embedding_objs) > 0:
-                    face_encoding = np.array(embedding_objs[0]['embedding'])
-                    results.append((face_encoding, face_location))
+                # Get aligned face using MTCNN (single face)
+                mtcnn_single = MTCNN(keep_all=False, device=self.device)
+                aligned_face = mtcnn_single(pil_face)
+
+                if aligned_face is not None:
+                    # Generate embedding
+                    embedding = self.model(aligned_face.unsqueeze(0)).detach().cpu().numpy().flatten()
+                    results.append((embedding, face_location))
 
             except Exception as e:
                 print(f"Error generating face embedding with OpenCV fallback: {e}")
@@ -136,7 +136,7 @@ class FaceDetector:
 
         return results
 
-    def recognize_face(self, face_encoding: np.ndarray) -> Optional[int]:
+    def recognize_face(self, face_encoding: np.ndarray, debug: bool = False) -> Optional[int]:
         """
         Match a face encoding against known faces using cosine distance
         Returns: person_id if match found, None otherwise
@@ -157,6 +157,9 @@ class FaceDetector:
         if len(distances) > 0:
             best_match_index = np.argmin(distances)
             best_distance = distances[best_match_index]
+
+            if debug:
+                print(f"      Best match distance: {best_distance:.4f} (tolerance: {self.tolerance:.4f})")
 
             # Check if the best match is within tolerance
             if best_distance <= self.tolerance:
@@ -243,21 +246,39 @@ class FaceDetector:
         """Draw bounding box around detected face"""
         top, right, bottom, left = face_location
 
-        # Draw box
-        color = (0, 255, 0) if person_id else (0, 0, 255)
-        cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
+        # Make sure coordinates are within frame bounds to prevent errors
+        height, width = frame.shape[:2]
+        left = max(0, min(left, width-1))
+        right = max(0, min(right, width-1))
+        top = max(0, min(top, height-1))
+        bottom = max(0, min(bottom, height-1))
 
-        # Draw label
+        # Draw box (increased thickness for better visibility)
+        color = (0, 255, 0) if person_id else (0, 0, 255)
+        cv2.rectangle(frame, (left, top), (right, bottom), color, 4)  # Increased from 2 to 4
+
+        # Draw label background with better positioning
         label = name if name else f"ID: {person_id}" if person_id else "Unknown"
-        cv2.rectangle(frame, (left, bottom - 35), (right, bottom), color, cv2.FILLED)
+        label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.8, 2)[0]
+        label_width, label_height = label_size
+
+        # Ensure label background doesn't go outside frame
+        label_bg_top = max(0, top - 40)
+        label_bg_left = left
+        label_bg_right = min(width-1, left + label_width + 12)
+        label_bg_bottom = min(height-1, top - 5)
+
+        cv2.rectangle(frame, (label_bg_left, label_bg_top), (label_bg_right, label_bg_bottom), color, cv2.FILLED)
+
+        # Draw label text with better contrast
         cv2.putText(
             frame,
             label,
-            (left + 6, bottom - 6),
+            (left + 6, max(label_bg_bottom - 10, 20)),
             cv2.FONT_HERSHEY_DUPLEX,
-            0.6,
+            0.8,  # Slightly larger
             (255, 255, 255),
-            1
+            2     # Thicker text
         )
 
         return frame

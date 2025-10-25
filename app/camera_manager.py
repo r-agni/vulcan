@@ -19,12 +19,34 @@ class CameraManager:
         self.frame_lock = threading.Lock()
         self.frame_callbacks = []
 
+    def _get_youtube_stream_url(self, youtube_url: str) -> str:
+        """Get direct video stream URL from YouTube using yt-dlp"""
+        try:
+            import yt_dlp
+            ydl_opts = {
+                'format': 'best[ext=mp4]',
+                'quiet': True,
+                'no_warnings': True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=False)
+                return info['url']
+        except Exception as e:
+            raise Exception(f"Failed to get YouTube stream URL: {e}")
+
     def start(self):
         """Start camera capture"""
         if self.is_running:
             return
 
-        self.cap = cv2.VideoCapture(self.camera_source)
+        # Check if camera_source is a YouTube URL
+        source = self.camera_source
+        if isinstance(source, str) and ('youtube.com' in source or 'youtu.be' in source):
+            print("Detected YouTube URL, extracting stream URL...")
+            source = self._get_youtube_stream_url(source)
+            print(f"Stream URL obtained")
+
+        self.cap = cv2.VideoCapture(source)
         self.cap.set(cv2.CAP_PROP_FPS, self.fps)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
