@@ -5,6 +5,12 @@ import time
 from datetime import datetime
 from typing import Optional, Callable
 import numpy as np
+try:
+    from activity_logger import log_activity
+except ImportError:
+    # Fallback if activity_logger is not available
+    def log_activity(msg, category="system", metadata=None):
+        print(f"[{category}] {msg}")
 
 
 class CameraManager:
@@ -120,6 +126,7 @@ class CameraManager:
         self.capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
         self.capture_thread.start()
         print(f"Camera started: {self.camera_source}")
+        log_activity(f"🎥 Camera started - Source: {self.camera_source[:60]}...", "system")
 
     def stop(self):
         """Stop camera capture"""

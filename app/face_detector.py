@@ -4,7 +4,12 @@ from typing import List, Tuple, Optional
 import pickle
 from datetime import datetime
 from sqlalchemy.orm import Session
-from .database import Person, DetectionEvent
+try:
+    from .database import Person, DetectionEvent
+    from .activity_logger import log_activity
+except ImportError:
+    from database import Person, DetectionEvent
+    from activity_logger import log_activity
 import os
 import torch
 from facenet_pytorch import MTCNN, InceptionResnetV1
@@ -57,6 +62,7 @@ class FaceDetector:
                 self.known_face_ids.append(person.id)
 
         print(f"Loaded {len(self.known_face_encodings)} known faces from database")
+        log_activity(f"📋 Loaded {len(self.known_face_encodings)} known faces from database", "system")
 
     def detect_faces(self, frame: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int, int, int], float]]:
         """
@@ -264,6 +270,8 @@ class FaceDetector:
         if len(self.known_face_encodings) == 0:
             return None
 
+        log_activity(f"🔎 Matching face against {len(self.known_face_encodings)} known faces...", "detection")
+
         # Calculate cosine distances between the face encoding and all known faces
         distances = []
         for known_encoding in self.known_face_encodings:
@@ -283,7 +291,9 @@ class FaceDetector:
 
             # Check if the best match is within tolerance
             if best_distance <= self.tolerance:
-                return self.known_face_ids[best_match_index]
+                person_id = self.known_face_ids[best_match_index]
+                log_activity(f"✓ Face match found (confidence: {(1-best_distance)*100:.1f}%)", "detection")
+                return person_id
 
         return None
 

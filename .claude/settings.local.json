@@ -1,12 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(tree:*)",
-      "Bash(python scripts/test_youtube.py:*)",
-      "Bash(pip install:*)",
-      "Bash(conda install:*)",
-      "Bash(set PYTHONIOENCODING=utf-8)",
-      "Read(//c/Users/agni_/**)"
+      "Bash(taskkill //PID 37908 //F)",
+      "Bash(python -c \"import time; time.sleep(12)\")",
+      "Bash(taskkill //PID 42768 //F)",
+      "Bash(python -c \"import time; time.sleep(15)\")",
+      "Bash(python -c \"import time; time.sleep(5)\")",
+      "Bash(taskkill //PID 11572 //F)"
     ],
     "deny": [],
     "ask": []

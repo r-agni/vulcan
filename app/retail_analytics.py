@@ -448,9 +448,11 @@ class HeatmapGenerator:
 
         # Add alpha channel
         heatmap_rgba = cv2.cvtColor(heatmap_full, cv2.COLOR_BGR2BGRA)
-        heatmap_rgba[:, :, 3] = (alpha * 255 * (normalized.reshape(self.grid_height, self.grid_width) / 255)).astype(np.uint8)
+        # Resize normalized alpha to match full image dimensions
+        alpha_channel = cv2.resize(normalized, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+        heatmap_rgba[:, :, 3] = (alpha * alpha_channel).astype(np.uint8)
 
-        return cv2.resize(heatmap_rgba, (self.width, self.height))
+        return heatmap_rgba
 
     def save_to_db(self, db: Session, time_bucket: str):
         """Save heatmap to database"""

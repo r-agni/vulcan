@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video AI Surveillance System</title>
+    <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="title">Video AI Surveillance System</h1>
+            <div class="toggle-controls">
+                <button class="toggle-btn" id="toggle-panel">
+                    <span>⚙</span> Overlay Settings
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Video Feed (Left - 70%) -->
+            <div class="video-section">
+                <div class="video-container">
+                    <img id="video-feed" src="/video_feed" alt="Live Video Feed">
+                </div>
+
+                <!-- Overlay Settings Panel (Hidden by default) -->
+                <div class="overlay-settings" id="overlay-settings">
+                    <h3>Overlay Controls</h3>
+                    <div class="overlay-grid">
+                        <label class="overlay-item">
+                            <input type="checkbox" name="bounding_boxes" checked>
+                            <span>Bounding Boxes</span>
+                        </label>
+                        <label class="overlay-item">
+                            <input type="checkbox" name="trajectories" checked>
+                            <span>Trajectories</span>
+                        </label>
+                        <label class="overlay-item">
+                            <input type="checkbox" name="zones" checked>
+                            <span>Zone Boundaries</span>
+                        </label>
+                        <label class="overlay-item">
+                            <input type="checkbox" name="virtual_lines" checked>
+                            <span>Virtual Lines</span>
+                        </label>
+                        <label class="overlay-item">
+                            <input type="checkbox" name="heatmap">
+                            <span>Traffic Heatmap</span>
+                        </label>
+                        <label class="overlay-item">
+                            <input type="checkbox" name="proximity" checked>
+                            <span>Proximity Circles</span>
+                        </label>
+                        <label class="overlay-item">
+                            <input type="checkbox" name="labels" checked>
+                            <span>Labels & Info</span>
+                        </label>
+                        <label class="overlay-item">
+                            <input type="checkbox" name="alerts" checked>
+                            <span>Alert Badges</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar (Right - 30%) -->
+            <aside class="sidebar">
+                <!-- Live Metrics -->
+                <section class="panel metrics-panel">
+                    <h2 class="panel-title">Live Metrics</h2>
+                    <div class="metrics-grid">
+                        <div class="metric-item">
+                            <div class="metric-label">Occupancy</div>
+                            <div class="metric-value" id="metric-occupancy">0</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Peak Today</div>
+                            <div class="metric-value" id="metric-peak">0</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Detections</div>
+                            <div class="metric-value" id="metric-detections">0</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-label">Active Zones</div>
+                            <div class="metric-value" id="metric-zones">0</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- System Activity -->
+                <section class="panel activity-panel">
+                    <h2 class="panel-title">System Activity</h2>
+                    <div class="activity-feed" id="activity-feed">
+                        <div class="activity-item">
+                            <span class="activity-icon">●</span>
+                            <span class="activity-text">System initializing...</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Live Analysis -->
+                <section class="panel analysis-panel">
+                    <div class="panel-header">
+                        <h2 class="panel-title">Live Analysis</h2>
+                        <button class="toggle-btn-small" id="toggle-analysis">
+                            <span>▼</span>
+                        </button>
+                    </div>
+                    <div class="analysis-feed" id="analysis-feed">
+                        <div class="analysis-placeholder">
+                            Waiting for analysis...
+                        </div>
+                    </div>
+                </section>
+            </aside>
+        </div>
+    </div>
+
+    <!-- Connection Status Indicator -->
+    <div class="status-indicator" id="status-indicator">
+        <span class="status-dot"></span>
+        <span class="status-text">Connecting...</span>
+    </div>
+
+    <script src="/static/dashboard.js"></script>
+</body>
+</html>
