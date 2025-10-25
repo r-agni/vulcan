@@ -225,16 +225,32 @@ function updateMetrics(metrics) {
     // Update each metric value
     const occupancy = document.getElementById('metric-occupancy');
     const peak = document.getElementById('metric-peak');
-    const detections = document.getElementById('metric-detections');
+    const dwell = document.getElementById('metric-dwell');
+    const tracking = document.getElementById('metric-tracking');
+    const entries = document.getElementById('metric-entries');
     const zones = document.getElementById('metric-zones');
 
     if (occupancy) occupancy.textContent = metrics.occupancy || 0;
     if (peak) peak.textContent = metrics.peak_today || 0;
-    if (detections) detections.textContent = metrics.detections_count || 0;
+    
+    // Format dwell time
+    if (dwell) {
+        const dwellTime = metrics.avg_dwell_time || 0;
+        if (dwellTime >= 60) {
+            const mins = Math.floor(dwellTime / 60);
+            const secs = Math.floor(dwellTime % 60);
+            dwell.textContent = `${mins}m ${secs}s`;
+        } else {
+            dwell.textContent = `${Math.floor(dwellTime)}s`;
+        }
+    }
+    
+    if (tracking) tracking.textContent = metrics.active_trajectories || 0;
+    if (entries) entries.textContent = metrics.total_entries || 0;
     if (zones) zones.textContent = metrics.active_zones || 0;
 
     // Add pulse animation to updated values
-    [occupancy, peak, detections, zones].forEach(el => {
+    [occupancy, peak, dwell, tracking, entries, zones].forEach(el => {
         if (el) {
             el.style.animation = 'none';
             setTimeout(() => {

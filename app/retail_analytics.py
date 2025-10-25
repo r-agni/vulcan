@@ -206,11 +206,17 @@ class ZoneDetector:
         self.zones = []
 
         for zone in zone_records:
+            # Parse polygon_points if it's a JSON string
+            polygon_points = zone.polygon_points
+            if isinstance(polygon_points, str):
+                import json
+                polygon_points = json.loads(polygon_points)
+            
             self.zones.append({
                 'id': zone.id,
                 'name': zone.name,
                 'type': zone.zone_type,
-                'polygon': zone.polygon_points,
+                'polygon': polygon_points,
                 'color': zone.color,
                 'max_capacity': zone.max_capacity
             })
@@ -317,11 +323,20 @@ class LineCrossingDetector:
         self.lines = []
 
         for line in line_records:
+            # Parse start_point and end_point if they're JSON strings
+            start_point = line.start_point
+            end_point = line.end_point
+            
+            if isinstance(start_point, str):
+                start_point = json.loads(start_point)
+            if isinstance(end_point, str):
+                end_point = json.loads(end_point)
+            
             self.lines.append({
                 'id': line.id,
                 'name': line.name,
-                'start': line.start_point,
-                'end': line.end_point,
+                'start': start_point,
+                'end': end_point,
                 'count_direction': line.count_direction,
                 'color': line.color
             })
