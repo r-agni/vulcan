@@ -23,7 +23,7 @@ load_dotenv()
 app = FastAPI(title="Video AI Surveillance System")
 
 # Initialize components
-camera = CameraManager(camera_source=int(os.getenv("CAMERA_SOURCE", 0)))
+camera = CameraManager(camera_source="https://www.youtube.com/watch?v=KMJS66jBtVQ")
 face_detector = FaceDetector(tolerance=0.6)
 person_detector = PersonDetector(confidence_threshold=0.7)
 gemini_analyzer = GeminiAnalyzer(api_key=os.getenv("GEMINI_API_KEY"))
@@ -43,9 +43,9 @@ async def startup_event():
     print("Database initialized")
 
     # Create directories
-    os.makedirs("uploads/frames", exist_ok=True)
-    os.makedirs("uploads/thumbnails", exist_ok=True)
-    os.makedirs("temp_videos", exist_ok=True)
+    os.makedirs("data/uploads/frames", exist_ok=True)
+    os.makedirs("data/uploads/thumbnails", exist_ok=True)
+    os.makedirs("data/temp_videos", exist_ok=True)
     os.makedirs("static", exist_ok=True)
 
     # Start camera
@@ -69,91 +69,106 @@ def process_frame(frame):
     """Process each camera frame with hybrid person+face detection"""
     global current_detected_person, analysis_in_progress
 
-    # Step 1: Detect persons for coarse segmentation
-    person_detections = person_detector.detect_persons(frame)
+    try:
+        # Step 1: Detect persons for coarse segmentation
+        person_detections = person_detector.detect_persons(frame)
 
-    db = next(get_db())
+        db = next(get_db())
 
-    # Step 2: For each detected person, check for visible faces
-    for person_bbox, person_confidence in person_detections:
-        # Extract person ROI with padding for face detection
-        roi_frame, offset_xy = person_detector.extract_person_roi(frame, person_bbox, padding=10)
+        # Step 2: For each detected person, check for visible faces
+        for person_bbox, person_confidence in person_detections:
+            # Extract person ROI with padding for face detection
+            roi_frame, offset_xy = person_detector.extract_person_roi(frame, person_bbox, padding=10)
 
-        # Detect faces within the person ROI
-        detected_faces_in_roi = face_detector.detect_faces_in_roi(frame, person_bbox, offset_xy)
+            # Detect faces within the person ROI
+            detected_faces_in_roi = face_detector.detect_faces_in_roi(frame, person_bbox, offset_xy)
 
-        # Check if any faces are sufficiently visible
-        visible_faces = []
-        for face_encoding, face_location in detected_faces_in_roi:
-            if person_detector.is_face_visible(person_bbox, face_location, face_confidence):
-                visible_faces.append((face_encoding, face_location))
+            # Check if any faces are sufficiently visible
+            visible_faces = []
+            for detection_result in detected_faces_in_roi:
+                try:
+                    # Safely unpack face detection results
+                    if len(detection_result) == 3:
+                        face_encoding, face_location, face_confidence = detection_result
+                        if person_detector.is_face_visible(person_bbox, face_location, face_confidence):
+                            visible_faces.append((face_encoding, face_location))
+                    else:
+                        print(f"Warning: Unexpected face detection result format: {len(detection_result)} elements")
+                except Exception as e:
+                    print(f"Error processing face detection result: {e}")
+                    continue
 
-        face_recognized = False
-        person_data = None
+            face_recognized = False
+            person_data = None
 
-        # Step 3: Try to recognize face if visible
-        if len(visible_faces) > 0:
-            # Use the most confident face detection
-            best_face_encoding, best_face_location = visible_faces[0]
+            # Step 3: Try to recognize face if visible
+            if len(visible_faces) > 0:
+                # Use the most confident face detection
+                best_face_encoding, best_face_location = visible_faces[0]
 
-            # Try to recognize face
-            person_id = face_detector.recognize_face(best_face_encoding)
+                # Try to recognize face
+                person_id = face_detector.recognize_face(best_face_encoding)
 
-            if person_id:
-                # Known person detected
-                person = db.query(Person).filter(Person.id == person_id).first()
-                face_detector.update_person_visit(db, person_id)
-                face_recognized = True
+                if person_id:
+                    # Known person detected
+                    person = db.query(Person).filter(Person.id == person_id).first()
+                    face_detector.update_person_visit(db, person_id)
+                    face_recognized = True
+                else:
+                    # Unknown person - add to database
+                    person = face_detector.add_person_to_db(
+                        db, best_face_encoding, frame, best_face_location
+                    )
+                    face_recognized = True
+
+                person_data = {
+                    "id": person.id,
+                    "name": person.name,
+                    "visit_count": person.visit_count,
+                    "first_seen": person.first_seen.isoformat(),
+                    "last_seen": person.last_seen.isoformat(),
+                    "thumbnail": person.thumbnail_path,
+                    "is_new": not person_id,
+                    "face_visible": True,
+                    "person_confidence": person_confidence
+                }
             else:
-                # Unknown person - add to database
-                person = face_detector.add_person_to_db(
-                    db, best_face_encoding, frame, best_face_location
+                # Person detected but no face visible - still track anonymously
+                # Create or retrieve anonymous person record based on position/size heuristic
+                # For now, we'll just log the detection without face recognition
+                person_data = {
+                    "name": "Person (Face Not Visible)",
+                    "is_new": True,
+                    "face_visible": False,
+                    "person_confidence": person_confidence,
+                    "bbox": person_bbox
+                }
+
+            # Step 4: Log detection and trigger analysis if face was recognized
+            if face_recognized and person_data and person_data.get("id"):
+                # Log detection event
+                frame_path = camera.save_frame(frame)
+                event = face_detector.log_detection_event(
+                    db, person_data["id"], 0.95, frame_path
                 )
-                face_recognized = True
 
-            person_data = {
-                "id": person.id,
-                "name": person.name,
-                "visit_count": person.visit_count,
-                "first_seen": person.first_seen.isoformat(),
-                "last_seen": person.last_seen.isoformat(),
-                "thumbnail": person.thumbnail_path,
-                "is_new": not person_id,
-                "face_visible": True,
-                "person_confidence": person_confidence
-            }
-        else:
-            # Person detected but no face visible - still track anonymously
-            # Create or retrieve anonymous person record based on position/size heuristic
-            # For now, we'll just log the detection without face recognition
-            person_data = {
-                "name": "Person (Face Not Visible)",
-                "is_new": True,
-                "face_visible": False,
-                "person_confidence": person_confidence,
-                "bbox": person_bbox
-            }
+                current_detected_person = person_data
 
-        # Step 4: Log detection and trigger analysis if face was recognized
-        if face_recognized and person_data and person_data.get("id"):
-            # Log detection event
-            frame_path = camera.save_frame(frame)
-            event = face_detector.log_detection_event(
-                db, person_data["id"], 0.95, frame_path
-            )
+                # Trigger behavior analysis
+                if not analysis_in_progress:
+                    threading.Thread(
+                        target=trigger_behavior_analysis,
+                        args=(person_data["id"], event.id),
+                        daemon=True
+                    ).start()
 
-            current_detected_person = person_data
-
-            # Trigger behavior analysis
-            if not analysis_in_progress:
-                threading.Thread(
-                    target=trigger_behavior_analysis,
-                    args=(person_data["id"], event.id),
-                    daemon=True
-                ).start()
-
-            # Broadcast to dashboard
-            asyncio.run(broadcast_detection(current_detected_person))
+                # Broadcast to dashboard
+                asyncio.run(broadcast_detection(current_detected_person))
+    
+    except Exception as e:
+        print(f"Error in process_frame: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def trigger_behavior_analysis(person_id: int, event_id: int):
@@ -307,6 +322,141 @@ async def get_current_detection():
     return current_detected_person or {"message": "No person detected"}
 
 
+@app.get("/api/analytics/overview")
+async def get_analytics_overview(db: Session = Depends(get_db)):
+    """Get overall analytics overview"""
+    from sqlalchemy import func
+    from datetime import datetime, timedelta
+    
+    # Total persons
+    total_persons = db.query(Person).count()
+    
+    # Total detection events
+    total_detections = db.query(DetectionEvent).count()
+    
+    # Total behavior analyses
+    total_analyses = db.query(BehaviorAnalysis).count()
+    
+    # Today's detections
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_detections = db.query(DetectionEvent)\
+        .filter(DetectionEvent.timestamp >= today_start)\
+        .count()
+    
+    # This week's detections
+    week_start = datetime.utcnow() - timedelta(days=7)
+    week_detections = db.query(DetectionEvent)\
+        .filter(DetectionEvent.timestamp >= week_start)\
+        .count()
+    
+    # Average visits per person
+    avg_visits = db.query(func.avg(Person.visit_count)).scalar() or 0
+    
+    # Most frequent visitor
+    most_frequent = db.query(Person)\
+        .order_by(Person.visit_count.desc())\
+        .first()
+    
+    most_frequent_data = None
+    if most_frequent:
+        most_frequent_data = {
+            "id": most_frequent.id,
+            "name": most_frequent.name,
+            "visit_count": most_frequent.visit_count,
+            "thumbnail": most_frequent.thumbnail_path
+        }
+    
+    # Last detection time
+    last_detection = db.query(DetectionEvent)\
+        .order_by(DetectionEvent.timestamp.desc())\
+        .first()
+    
+    last_detection_time = None
+    if last_detection:
+        last_detection_time = last_detection.timestamp.isoformat()
+    
+    return {
+        "total_persons": total_persons,
+        "total_detections": total_detections,
+        "total_analyses": total_analyses,
+        "today_detections": today_detections,
+        "week_detections": week_detections,
+        "avg_visits_per_person": round(avg_visits, 2),
+        "most_frequent_visitor": most_frequent_data,
+        "last_detection_time": last_detection_time
+    }
+
+
+@app.get("/api/analytics/recent_detections")
+async def get_recent_detections(limit: int = 10, db: Session = Depends(get_db)):
+    """Get recent detection events"""
+    detections = db.query(DetectionEvent)\
+        .order_by(DetectionEvent.timestamp.desc())\
+        .limit(limit)\
+        .all()
+    
+    result = []
+    for detection in detections:
+        person = db.query(Person).filter(Person.id == detection.person_id).first()
+        result.append({
+            "id": detection.id,
+            "person_id": detection.person_id,
+            "person_name": person.name if person else "Unknown",
+            "person_thumbnail": person.thumbnail_path if person else None,
+            "timestamp": detection.timestamp.isoformat(),
+            "confidence": detection.confidence,
+            "frame_path": detection.frame_path
+        })
+    
+    return result
+
+
+@app.get("/api/analytics/timeline")
+async def get_detection_timeline(hours: int = 24, db: Session = Depends(get_db)):
+    """Get detection events timeline"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    
+    start_time = datetime.utcnow() - timedelta(hours=hours)
+    
+    # Group by hour
+    detections = db.query(
+        func.strftime('%Y-%m-%d %H:00:00', DetectionEvent.timestamp).label('hour'),
+        func.count(DetectionEvent.id).label('count')
+    ).filter(
+        DetectionEvent.timestamp >= start_time
+    ).group_by('hour').all()
+    
+    return [{
+        "timestamp": hour,
+        "count": count
+    } for hour, count in detections]
+
+
+@app.get("/api/analytics/behavior_summary")
+async def get_behavior_summary(limit: int = 5, db: Session = Depends(get_db)):
+    """Get recent behavior analyses"""
+    analyses = db.query(BehaviorAnalysis)\
+        .order_by(BehaviorAnalysis.timestamp.desc())\
+        .limit(limit)\
+        .all()
+    
+    result = []
+    for analysis in analyses:
+        person = db.query(Person).filter(Person.id == analysis.person_id).first()
+        result.append({
+            "id": analysis.id,
+            "person_id": analysis.person_id,
+            "person_name": person.name if person else "Unknown",
+            "analysis_type": analysis.analysis_type,
+            "analysis_text": analysis.analysis_text[:200] + "..." if len(analysis.analysis_text) > 200 else analysis.analysis_text,
+            "timestamp": analysis.timestamp.isoformat(),
+            "video_clip": analysis.video_clip_path
+        })
+    
+    return result
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve dashboard HTML"""
@@ -316,7 +466,7 @@ async def root():
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 
 
 if __name__ == "__main__":

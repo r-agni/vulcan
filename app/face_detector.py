@@ -4,7 +4,7 @@ from typing import List, Tuple, Optional
 import pickle
 from datetime import datetime
 from sqlalchemy.orm import Session
-from database import Person, DetectionEvent
+from .database import Person, DetectionEvent
 import os
 import torch
 from facenet_pytorch import MTCNN, InceptionResnetV1
@@ -58,10 +58,10 @@ class FaceDetector:
 
         print(f"Loaded {len(self.known_face_encodings)} known faces from database")
 
-    def detect_faces(self, frame: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
+    def detect_faces(self, frame: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int, int, int], float]]:
         """
         Detect faces in a frame using facenet-pytorch and MTCNN
-        Returns: List of (face_encoding, face_location) tuples
+        Returns: List of (face_encoding, face_location, confidence) tuples
         """
         results = []
 
@@ -92,10 +92,11 @@ class FaceDetector:
                         # Convert to (top, right, bottom, left) format to match original API
                         face_location = (int(y1), int(x2), int(y2), int(x1))
 
-                        # Get corresponding embedding
+                        # Get corresponding embedding and confidence
                         face_encoding = embeddings[i]
+                        face_confidence = float(probs[i])
 
-                        results.append((face_encoding, face_location))
+                        results.append((face_encoding, face_location, face_confidence))
 
         except Exception as e:
             print(f"Error detecting faces with facenet-pytorch: {e}")
@@ -105,7 +106,7 @@ class FaceDetector:
         return results
 
     def detect_faces_in_roi(self, frame: np.ndarray, roi_bbox: Tuple[int, int, int, int],
-                           offset_xy: Tuple[int, int] = (0, 0)) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
+                           offset_xy: Tuple[int, int] = (0, 0)) -> List[Tuple[np.ndarray, Tuple[int, int, int, int], float]]:
         """
         Detect faces in a specific region of interest (ROI) using facenet-pytorch and MTCNN
         Useful for hybrid detection where we only want faces within detected person regions
@@ -115,7 +116,7 @@ class FaceDetector:
             roi_bbox: Region of interest bbox (left, top, right, bottom)
             offset_xy: Offset to add to face locations to convert back to full frame coordinates
 
-        Returns: List of (face_encoding, face_location) tuples with global coordinates
+        Returns: List of (face_encoding, face_location, confidence) tuples with global coordinates
         """
         results = []
 
@@ -159,10 +160,11 @@ class FaceDetector:
                         # Convert to (top, right, bottom, left) format to match original API
                         face_location = (int(global_y1), int(global_x2), int(global_y2), int(global_x1))
 
-                        # Get corresponding embedding
+                        # Get corresponding embedding and confidence
                         face_encoding = embeddings[i]
+                        face_confidence = float(probs[i])
 
-                        results.append((face_encoding, face_location))
+                        results.append((face_encoding, face_location, face_confidence))
 
         except Exception as e:
             print(f"Error detecting faces in ROI: {e}")
@@ -172,7 +174,7 @@ class FaceDetector:
         return results
 
     def _detect_faces_opencv_in_roi(self, frame: np.ndarray, roi_bbox: Tuple[int, int, int, int],
-                                   offset_xy: Tuple[int, int] = (0, 0)) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
+                                   offset_xy: Tuple[int, int] = (0, 0)) -> List[Tuple[np.ndarray, Tuple[int, int, int, int], float]]:
         """
         Fallback face detection in ROI using OpenCV Haar Cascade
         """
@@ -211,7 +213,7 @@ class FaceDetector:
                         # Convert to (top, right, bottom, left) format
                         face_location = (global_y, global_x + w, global_y + h, global_x)
 
-                        results.append((embedding, face_location))
+                        results.append((embedding, face_location, 0.8))
 
                 except Exception as e:
                     print(f"Error generating face embedding in ROI: {e}")
@@ -222,7 +224,7 @@ class FaceDetector:
 
         return results
 
-    def _detect_faces_opencv(self, frame: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
+    def _detect_faces_opencv(self, frame: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int, int, int], float]]:
         """
         Fallback face detection using OpenCV Haar Cascade + facenet-pytorch embeddings
         """
@@ -246,7 +248,7 @@ class FaceDetector:
                 if aligned_face is not None:
                     # Generate embedding
                     embedding = self.model(aligned_face.unsqueeze(0)).detach().cpu().numpy().flatten()
-                    results.append((embedding, face_location))
+                    results.append((embedding, face_location, 0.8))
 
             except Exception as e:
                 print(f"Error generating face embedding with OpenCV fallback: {e}")
@@ -301,9 +303,9 @@ class FaceDetector:
         face_image = frame[top:bottom, left:right]
 
         # Save thumbnail
-        os.makedirs("uploads/thumbnails", exist_ok=True)
+        os.makedirs("data/uploads/thumbnails", exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        thumbnail_path = f"uploads/thumbnails/person_{timestamp}.jpg"
+        thumbnail_path = f"data/uploads/thumbnails/person_{timestamp}.jpg"
         cv2.imwrite(thumbnail_path, face_image)
 
         # Create person record

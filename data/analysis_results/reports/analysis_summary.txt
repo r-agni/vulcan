@@ -1,0 +1,32 @@
+============================================================
+VIDEO ANALYSIS SUMMARY REPORT
+============================================================
+
+Analysis Start Time: 2025-10-19 00:42:59
+Analysis Duration: 139.7 seconds
+Total Frames Processed: 9
+Average FPS: 0.06
+
+Video Source: https://www.youtube.com/watch?v=KMJS66jBtVQ
+Output Directory: data/analysis_results
+
+============================================================
+
+DETECTION STATISTICS
+============================================================
+Total Unique Persons: 0
+Total Detection Events: 0
+
+Active Analysis Components:
+  - Person Detection: ✓
+  - Face Recognition: ✓
+  - Trajectory Tracking: ✓
+  - Dwell Time Analysis: ✓
+  - Zone Detection: ✓
+  - Line Crossing Detection: ✓
+  - Occupancy Tracking: ✓
+  - Heatmap Generation: ✓
+  - Queue Detection: ✓
+  - Gemini AI Analysis: ✓
+
+============================================================

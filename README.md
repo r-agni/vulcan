@@ -10,22 +10,30 @@
 
 ## 🚀 Quick Start
 
-### 1. Install Dependencies
+### Option 1: Batch Analysis (CLI)
+Run comprehensive video analysis from command line:
+```bash
+python run_analysis.py --source "https://www.youtube.com/watch?v=KMJS66jBtVQ" --duration 60
+```
+
+### Option 2: Real-Time Dashboard (Web)
+
+#### 1. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Test with YouTube Video
+#### 2. Test with YouTube Video
 ```bash
 python scripts/test_youtube.py
 ```
 
-### 3. Run Full System
+#### 3. Run Full System
 ```bash
 python app/main_retail.py
 ```
 
-### 4. Open Dashboard
+#### 4. Open Dashboard
 ```
 http://localhost:8000
 ```
@@ -126,6 +134,37 @@ DATABASE_URL=sqlite:///./data/database/video_ai.db
 
 ---
 
+## 🚀 NEW: Comprehensive Analysis Runner
+
+The system now includes a **powerful CLI tool** for batch video analysis:
+
+```bash
+python run_analysis.py --source video.mp4 --duration 300
+```
+
+### Features
+- **All-in-One Analysis** - Person detection, face recognition, Gemini AI, and retail analytics
+- **Batch Processing** - Process videos offline without web interface
+- **Comprehensive Output** - Annotated frames, heatmaps, trajectories, and reports
+- **Flexible Options** - Control duration, resolution, Gemini intervals, and more
+
+### Quick Examples
+
+```bash
+# Analyze YouTube video for 5 minutes with Gemini
+python run_analysis.py --source "https://www.youtube.com/watch?v=KMJS66jBtVQ" --duration 300
+
+# Fast processing without Gemini
+python run_analysis.py --source retail.mp4 --no-gemini --no-save-frames
+
+# High resolution analysis
+python run_analysis.py --source video.mp4 --width 1920 --height 1080
+```
+
+**📖 Full Guide:** [ANALYSIS_RUNNER_GUIDE.md](ANALYSIS_RUNNER_GUIDE.md)
+
+---
+
 ## 🛠️ Key Technologies
 
 - **FastAPI** - Modern Python web framework
@@ -140,6 +179,7 @@ DATABASE_URL=sqlite:///./data/database/video_ai.db
 
 ## 📖 Documentation
 
+- **[Analysis Runner Guide](ANALYSIS_RUNNER_GUIDE.md)** - **NEW!** Batch processing CLI tool
 - **[Complete System Summary](docs/COMPLETE_SYSTEM_SUMMARY.md)** - Full feature overview
 - **[Retail Analytics Guide](docs/RETAIL_ANALYTICS_README.md)** - Comprehensive 400+ line guide
 - **[Project Structure](docs/PROJECT_STRUCTURE.md)** - Architecture details
