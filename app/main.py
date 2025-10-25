@@ -6,7 +6,7 @@ import json
 import cv2
 import os
 from typing import List
-from datetime import datetime
+from datetime import datetime, UTC
 import threading
 
 from camera_manager import CameraManager
@@ -199,22 +199,24 @@ def continuous_gemini_analysis_and_alerts():
                 cv2.imwrite(frame_path, frame)
 
                 # Stream analysis start
-                stream_analysis(f"[{datetime.utcnow().strftime('%H:%M:%S')}] Analyzing current scene...", is_complete=False)
+                stream_analysis(f"[{datetime.now(UTC).strftime('%H:%M:%S')}] Analyzing current scene...", is_complete=False)
 
                 # Analyze frame with Gemini
                 analysis_result = gemini_analyzer.analyze_single_frame(frame_path)
 
                 analysis_text = None
+                timestamp_str = datetime.now(UTC).strftime('%H:%M:%S')
+
                 if "error" not in analysis_result:
                     analysis_text = analysis_result.get("frame_analysis", "")
 
-                    # Stream the full analysis
-                    timestamp_str = datetime.utcnow().strftime('%H:%M:%S')
-                    full_analysis = f"[{timestamp_str}] {analysis_text}"
-                    stream_analysis(full_analysis, is_complete=True)
+                    # Stream the full analysis if we got valid text
+                    if analysis_text:
+                        full_analysis = f"[{timestamp_str}] {analysis_text}"
+                        stream_analysis(full_analysis, is_complete=True)
 
-                    # Also log to activity feed
-                    log_activity(f"📊 Gemini: {analysis_text[:100]}...", "analysis")
+                        # Also log to activity feed
+                        log_activity(f"📊 Gemini: {analysis_text[:100]}...", "analysis")
 
                 # === INTEGRATED ALERT GENERATION ===
                 # Prepare comprehensive analytics data
@@ -224,7 +226,7 @@ def continuous_gemini_analysis_and_alerts():
                     'dwell_times': [],
                     'queue_metrics': []
                 }
-                
+
                 # Add zone occupancy data
                 for zone in zones_data:
                     zone_id = zone.get('id')
@@ -236,13 +238,13 @@ def continuous_gemini_analysis_and_alerts():
                             'current': zone_occupancy,
                             'capacity': zone.get('max_capacity', 0)
                         })
-                
+
                 # Add dwell time data
                 for (person_id, zone_id), entry_data in dwell_calculator.zone_entries.items():
                     zone_name = next((z['name'] for z in zones_data if z.get('id') == zone_id), f'Zone {zone_id}')
                     zone_type = next((z['type'] for z in zones_data if z.get('id') == zone_id), 'product')
-                    dwell_time = (datetime.utcnow() - entry_data['entry_time']).total_seconds()
-                    
+                    dwell_time = (datetime.now(UTC) - entry_data['entry_time']).total_seconds()
+
                     analytics_data['dwell_times'].append({
                         'person_id': person_id,
                         'zone_id': zone_id,
@@ -250,13 +252,20 @@ def continuous_gemini_analysis_and_alerts():
                         'zone_type': zone_type,
                         'duration': dwell_time
                     })
-                
+
+                # Collect actual active person IDs from dwell times and detections
+                active_person_ids = set()
+                for dwell_entry in analytics_data['dwell_times']:
+                    person_id = dwell_entry.get('person_id')
+                    if person_id:
+                        active_person_ids.add(person_id)
+
                 # Create timestamp-specific data package
                 timestamp_data = {
-                    'timestamp': datetime.utcnow().isoformat(),
+                    'timestamp': datetime.now(UTC).isoformat(),
                     'frame_time': timestamp_str,
                     'detections': len(current_detections),
-                    'active_persons': list(occupancy_counter.current_occupancy.get(None, set())),
+                    'active_persons': list(active_person_ids),
                     'zones_snapshot': analytics_data['occupancy'].copy(),
                     'gemini_analysis': analysis_text
                 }
@@ -267,10 +276,10 @@ def continuous_gemini_analysis_and_alerts():
                     behavior_analysis=analysis_text,
                     timestamp_data=timestamp_data
                 )
-                
+
                 # Add alerts to manager
                 added_alerts = alert_manager.add_alerts(alerts)
-                
+
                 # Broadcast new alerts
                 if added_alerts:
                     log_activity(f"🚨 Generated {len(added_alerts)} new alert(s)", "system")
@@ -386,7 +395,7 @@ def process_frame(frame):
             trajectory_tracker.update_position(
                 person_id,
                 person_bbox,
-                datetime.utcnow(),
+                datetime.now(UTC),
                 frame_width,
                 frame_height,
                 current_zone_id
@@ -401,14 +410,14 @@ def process_frame(frame):
                     person_id,
                     current_zone_id,
                     (center_x, center_y),
-                    datetime.utcnow()
+                    datetime.now(UTC)
                 )
 
             # Check line crossings
-            line_crossing_detector.check_crossing(person_id, (center_x, center_y), datetime.utcnow())
+            line_crossing_detector.check_crossing(person_id, (center_x, center_y), datetime.now(UTC))
 
         # Update occupancy counter with all positions
-        zone_occupancies = occupancy_counter.update(person_positions, datetime.utcnow())
+        zone_occupancies = occupancy_counter.update(person_positions, datetime.now(UTC))
 
         # Build current_detections for overlay rendering
         for person_id, position in person_positions.items():

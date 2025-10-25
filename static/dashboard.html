@@ -16,7 +16,7 @@
             <h1 class="title">Video AI Surveillance System</h1>
             <div class="toggle-controls">
                 <button class="toggle-btn" id="toggle-panel">
-                    <span>⚙</span> Overlay Settings
+                    Overlay Controls
                 </button>
             </div>
         </header>
@@ -28,9 +28,9 @@
 
         <!-- Main Content Area -->
         <div class="main-content">
-            <!-- Top Section: Video + Live Metrics -->
+            <!-- Top Section: Video + Overlay Settings -->
             <div class="top-section">
-                <!-- Video Feed (Left - 70%) -->
+                <!-- Video Feed (Full Width) -->
                 <div class="video-section">
                     <div class="video-container">
                         <img id="video-feed" src="/video_feed" alt="Live Video Feed">
@@ -74,57 +74,52 @@
                             </label>
                         </div>
                     </div>
-                </div>
 
-                <!-- Live Metrics (Right - 30%) -->
-                <aside class="metrics-sidebar">
-                    <section class="panel metrics-panel">
-                        <h2 class="panel-title">Live Metrics</h2>
-                        <div class="metrics-grid">
-                            <div class="metric-item">
-                                <div class="metric-label">Current Customers</div>
-                                <div class="metric-value" id="metric-occupancy">0</div>
+                    <!-- Live Metrics (Top-Right Corner) -->
+                    <aside class="metrics-corner">
+                        <section class="panel metrics-panel">
+                            <h2 class="panel-title">Live Metrics</h2>
+                            <div class="metrics-grid">
+                                <div class="metric-item">
+                                    <div class="metric-label">Current Customers</div>
+                                    <div class="metric-value" id="metric-occupancy">0</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">Peak Today</div>
+                                    <div class="metric-value" id="metric-peak">0</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">Avg Dwell Time</div>
+                                    <div class="metric-value" id="metric-dwell">0s</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">Active Tracking</div>
+                                    <div class="metric-value" id="metric-tracking">0</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">Entries Today</div>
+                                    <div class="metric-value" id="metric-entries">0</div>
+                                </div>
+                                <div class="metric-item">
+                                    <div class="metric-label">Active Zones</div>
+                                    <div class="metric-value" id="metric-zones">0</div>
+                                </div>
                             </div>
-                            <div class="metric-item">
-                                <div class="metric-label">Peak Today</div>
-                                <div class="metric-value" id="metric-peak">0</div>
-                            </div>
-                            <div class="metric-item">
-                                <div class="metric-label">Avg Dwell Time</div>
-                                <div class="metric-value" id="metric-dwell">0s</div>
-                            </div>
-                            <div class="metric-item">
-                                <div class="metric-label">Active Tracking</div>
-                                <div class="metric-value" id="metric-tracking">0</div>
-                            </div>
-                            <div class="metric-item">
-                                <div class="metric-label">Entries Today</div>
-                                <div class="metric-value" id="metric-entries">0</div>
-                            </div>
-                            <div class="metric-item">
-                                <div class="metric-label">Active Zones</div>
-                                <div class="metric-value" id="metric-zones">0</div>
-                            </div>
-                        </div>
-                    </section>
-                </aside>
+                        </section>
+                    </aside>
+                </div>
             </div>
 
-            <!-- Bottom Section: Tabbed Panels -->
+            <!-- Bottom Section: Content Panels -->
             <div class="bottom-section">
-                <!-- Tab Navigation -->
-                <div class="tab-navigation">
-                    <button class="tab-arrow tab-arrow-left" id="tab-prev">◀</button>
-                    <div class="tab-indicator">
-                        <span class="tab-name" id="current-tab-name">System Activity</span>
-                    </div>
-                    <button class="tab-arrow tab-arrow-right" id="tab-next">▶</button>
-                </div>
-
-                <!-- Tab Content Container -->
-                <div class="tab-content-container">
-                    <!-- System Activity Tab -->
-                    <section class="tab-panel active" id="tab-activity" data-tab-name="System Activity">
+                <!-- Content Panels -->
+                <div class="content-panels">
+                    <!-- System Activity Panel -->
+                    <section class="content-panel" id="panel-activity">
+                        <div class="panel-header-styled">
+                            <h2 class="section-title">System Activity</h2>
+                            <p class="section-subtitle">Real-time event monitoring</p>
+                        </div>
                         <div class="activity-feed" id="activity-feed">
                             <div class="activity-item">
                                 <span class="activity-icon">●</span>
@@ -133,8 +128,12 @@
                         </div>
                     </section>
 
-                    <!-- Gemini Analysis Tab -->
-                    <section class="tab-panel" id="tab-analysis" data-tab-name="Gemini Analysis">
+                    <!-- Gemini Analysis Panel -->
+                    <section class="content-panel" id="panel-analysis">
+                        <div class="panel-header-styled">
+                            <h2 class="section-title">AI Behavioral Analysis</h2>
+                            <p class="section-subtitle">Gemini-powered insights</p>
+                        </div>
                         <div class="analysis-feed" id="analysis-feed">
                             <div class="analysis-placeholder">
                                 Waiting for analysis...
@@ -142,19 +141,50 @@
                         </div>
                     </section>
 
-                    <!-- RAG Search Tab -->
-                    <section class="tab-panel" id="tab-search" data-tab-name="Search">
-                        <div class="rag-search-container">
-                            <div class="search-input-group">
-                                <input type="text" id="rag-query-input"
-                                       placeholder="Ask about behaviors, zones, customers..."
-                                       class="search-input">
-                                <button id="rag-search-btn" class="search-btn">Search</button>
-                            </div>
-                            <div class="rag-results" id="rag-results">
-                                <div class="rag-placeholder">
-                                    Ask questions about customer behaviors, zone activity, emotional states, or any analytics data.
+                    <!-- RAG Search Panel -->
+                    <section class="content-panel" id="panel-search">
+                        <div class="panel-header-styled">
+                            <h2 class="section-title">AI Analytics Assistant</h2>
+                            <p class="section-subtitle">Chat with your historical data</p>
+                        </div>
+                        <div class="rag-chat-container">
+                            <!-- Chat Messages Area -->
+                            <div class="chat-messages" id="chat-messages">
+                                <div class="chat-welcome">
+                                    <div class="welcome-icon">🤖</div>
+                                    <div class="welcome-text">
+                                        <h3>Welcome to your AI Analytics Assistant</h3>
+                                        <p>Ask me anything about customer behaviors, zone activity, dwell times, or historical patterns.</p>
+                                    </div>
+                                    <div class="suggested-queries">
+                                        <div class="suggestion-label">Try asking:</div>
+                                        <button class="suggestion-btn" data-query="What zones had the most activity today?">
+                                            What zones had the most activity today?
+                                        </button>
+                                        <button class="suggestion-btn" data-query="Which customers spent the most time in the store?">
+                                            Which customers spent the most time?
+                                        </button>
+                                        <button class="suggestion-btn" data-query="Show me unusual behavior patterns">
+                                            Show me unusual behavior patterns
+                                        </button>
+                                    </div>
                                 </div>
+                            </div>
+
+                            <!-- Chat Input Area -->
+                            <div class="chat-input-container">
+                                <div class="chat-input-wrapper">
+                                    <textarea id="rag-query-input"
+                                              placeholder="Type your question here..."
+                                              class="chat-input"
+                                              rows="1"></textarea>
+                                    <button id="rag-search-btn" class="chat-send-btn" title="Send message">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="chat-status" id="chat-status"></div>
                             </div>
                         </div>
                     </section>

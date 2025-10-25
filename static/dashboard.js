@@ -16,9 +16,6 @@ const WS_HOST = window.location.host;
 // State
 let currentAnalysisId = null;
 let overlaySettings = {};
-let currentTabIndex = 0;
-const tabs = ['tab-activity', 'tab-analysis', 'tab-search'];
-const tabNames = ['System Activity', 'Gemini Analysis', 'Search'];
 
 /**
  * Initialize Dashboard
@@ -35,7 +32,6 @@ function initDashboard() {
     // Setup UI event listeners
     setupOverlayControls();
     setupTogglePanel();
-    setupTabNavigation();
 
     // Load overlay settings
     loadOverlaySettings();
@@ -565,58 +561,6 @@ function setupTogglePanel() {
     });
 }
 
-/**
- * Setup Tab Navigation
- */
-function setupTabNavigation() {
-    const prevBtn = document.getElementById('tab-prev');
-    const nextBtn = document.getElementById('tab-next');
-    const tabNameEl = document.getElementById('current-tab-name');
-
-    if (prevBtn && nextBtn && tabNameEl) {
-        prevBtn.addEventListener('click', () => switchTab(-1));
-        nextBtn.addEventListener('click', () => switchTab(1));
-
-        // Keyboard navigation
-        document.addEventListener('keydown', (e) => {
-            if (e.altKey && e.key === 'ArrowLeft') {
-                e.preventDefault();
-                switchTab(-1);
-            } else if (e.altKey && e.key === 'ArrowRight') {
-                e.preventDefault();
-                switchTab(1);
-            }
-        });
-    }
-}
-
-/**
- * Switch to a different tab
- */
-function switchTab(direction) {
-    // Calculate new tab index with wrapping
-    currentTabIndex = (currentTabIndex + direction + tabs.length) % tabs.length;
-
-    // Hide all tabs
-    tabs.forEach(tabId => {
-        const tabPanel = document.getElementById(tabId);
-        if (tabPanel) {
-            tabPanel.classList.remove('active');
-        }
-    });
-
-    // Show current tab
-    const activeTab = document.getElementById(tabs[currentTabIndex]);
-    if (activeTab) {
-        activeTab.classList.add('active');
-    }
-
-    // Update tab name
-    const tabNameEl = document.getElementById('current-tab-name');
-    if (tabNameEl) {
-        tabNameEl.textContent = tabNames[currentTabIndex];
-    }
-}
 
 /**
  * Load Overlay Settings from API

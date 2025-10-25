@@ -187,68 +187,81 @@ class AlertGenerator:
         try:
             # Prepare context for Gemini
             context = self._prepare_context(analytics_data, behavior_analysis, timestamp_data)
-            
+
+            # Extract actual person IDs from the data to prevent hallucination
+            actual_person_ids = set()
+            if 'dwell_times' in analytics_data:
+                actual_person_ids.update(d.get('person_id') for d in analytics_data['dwell_times'] if d.get('person_id'))
+            if timestamp_data and 'active_persons' in timestamp_data:
+                actual_person_ids.update(timestamp_data['active_persons'])
+
+            # Create explicit list of valid person IDs
+            person_id_list = list(actual_person_ids) if actual_person_ids else []
+            person_constraint = f"\nVALID PERSON IDs ONLY: {person_id_list}" if person_id_list else "\nNo person IDs available - Generate only operational/manager alerts if needed."
+
             prompt = f"""
             You are an intelligent retail surveillance alert system. Analyze the following real-time data and generate actionable alerts for store staff.
 
             CURRENT SITUATION:
             {context}
+            {person_constraint}
 
             TASK: Generate alerts in JSON format following this structure:
             {{
               "alerts": [
                 {{
-                  "title": "Brief alert title (e.g., 'Person #123 in Electronics')",
+                  "title": "Brief alert title (e.g., 'Customer in Electronics')",
                   "message": "Concise, actionable message for quick reading",
                   "priority": "low|medium|high|critical",
                   "category": "customer_service|queue_management|security|operations|capacity",
                   "recipient": "salesperson|manager|both",
-                  "person_id": null or number (REQUIRED for salesperson alerts),
+                  "person_id": null or number from VALID PERSON IDs list ONLY,
                   "zone_id": null or number,
                   "zone_name": "zone name if applicable",
                   "person_details": {{
-                    "estimated_demographics": "Brief description (age range, gender if evident)",
-                    "appearance": "Brief appearance notes (clothing colors, distinctive features)",
-                    "behavior_summary": "Key behaviors observed",
-                    "zone_history": "Which zones visited and for how long",
+                    "behavior_summary": "Key behaviors observed from the data",
+                    "zone_history": "Which zones visited and for how long (from data provided)",
                     "engagement_level": "low|medium|high",
-                    "purchase_intent": "Brief assessment of purchase likelihood",
+                    "purchase_intent": "Brief assessment based on dwell time and zone visits",
                     "recommended_approach": "Specific suggestion for salesperson"
                   }}
                 }}
               ]
             }}
 
+            CRITICAL RULES TO PREVENT HALLUCINATION:
+            1. ONLY use person_id values from the VALID PERSON IDs list above
+            2. DO NOT invent person IDs, demographics, or appearance details
+            3. DO NOT create alerts for people not in the provided data
+            4. Base all alerts STRICTLY on the provided analytics data
+            5. If no person data is available, generate only operational/manager alerts
+
             ALERT PRIORITY GUIDELINES:
 
-            FOCUS HEAVILY on SALESPERSON alerts (aim for 70-80% of alerts):
-            - Customer showing interest (2+ minutes in any product zone)
-            - Customer examining products closely or repeatedly
-            - Customer appears to need assistance or looks confused
-            - High-value customer opportunity (premium section, extended browsing)
-            - Customer returning to same zone multiple times
-            - Customer showing positive body language toward products
-            - Always include person_id and rich person_details for these alerts
+            For SALESPERSON alerts (when valid person data exists):
+            - Customer showing interest (2+ minutes in any product zone - check DWELL TIMES data)
+            - Customer in multiple zones (check zone_history from data)
+            - High dwell time customers needing assistance
+            - MUST use valid person_id from list above
+            - person_details should reflect ACTUAL data provided, not assumptions
 
-            For MANAGER alerts (20-30% of alerts):
-            - Critical operational issues (long queues, capacity warnings)
-            - Staffing needs (need to open more registers, floor coverage)
-            - Customer satisfaction risks (frustrated customers, long wait times)
-            - System or security concerns
+            For MANAGER alerts:
+            - Critical operational issues (long queues, capacity warnings from provided data)
+            - Staffing needs based on occupancy data
+            - Customer satisfaction risks based on queue metrics
+            - General store operations
 
             PERSON DETAILS REQUIREMENTS:
-            - For every SALESPERSON alert, provide comprehensive person_details
-            - Include person_id to enable salesperson to identify the customer
-            - Provide actionable insights based on observed behavior
-            - Suggest specific approaches tailored to the customer's behavior
-            - Note any indicators of purchase intent or product interest
+            - Only include person_details if you have a valid person_id from the list
+            - Base behavior_summary ONLY on provided dwell time and zone data
+            - Do NOT invent demographics, appearance, or other details
+            - Focus on actionable behavioral insights from the actual data
 
             IMPORTANT:
-            - Generate 5-8 alerts, with MOST being for salespeople
-            - Be specific about person identification (Person #X)
-            - Include detailed person_details for every customer-facing alert
-            - Make messages concise for quick reading, details go in person_details
-            - Prioritize customer engagement opportunities over operational issues
+            - Generate 2-5 alerts based on ACTUAL data available
+            - Quality over quantity - only alert on real observations
+            - If person data is limited, focus more on operational alerts
+            - NEVER use person IDs not in the VALID PERSON IDs list
 
             Provide ONLY the JSON response, no additional text.
             """
@@ -273,10 +286,23 @@ class AlertGenerator:
             
             alert_data = json.loads(response_text)
             
-            # Convert to Alert objects
+            # Convert to Alert objects with validation
             alerts = []
             for alert_dict in alert_data.get('alerts', [])[:8]:  # Limit to 8 alerts
                 try:
+                    person_id = alert_dict.get('person_id')
+
+                    # VALIDATION: If alert has a person_id, it MUST be in our valid list
+                    if person_id is not None:
+                        if person_id not in person_id_list:
+                            print(f"REJECTED HALLUCINATED ALERT: person_id {person_id} not in valid list {person_id_list}")
+                            continue  # Skip this hallucinated alert
+
+                    # Additional validation: salesperson alerts MUST have person_id
+                    if alert_dict['recipient'] == 'salesperson' and person_id is None:
+                        print(f"REJECTED: Salesperson alert without person_id: {alert_dict['title']}")
+                        continue
+
                     alert = Alert(
                         id=f"ai_{int(datetime.now().timestamp())}_{len(alerts)}",
                         title=alert_dict['title'],
@@ -285,7 +311,7 @@ class AlertGenerator:
                         category=AlertCategory(alert_dict['category']),
                         recipient=AlertRecipient(alert_dict['recipient']),
                         timestamp=datetime.now(),
-                        person_id=alert_dict.get('person_id'),
+                        person_id=person_id,
                         zone_id=alert_dict.get('zone_id'),
                         zone_name=alert_dict.get('zone_name'),
                         context_data={'source': 'ai_generated'},

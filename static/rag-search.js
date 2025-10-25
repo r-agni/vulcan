@@ -1,36 +1,140 @@
 /**
- * RAG Search Functionality for Dashboard
+ * RAG Chatbot Functionality for Dashboard
  */
 
+let chatHistory = [];
+
 /**
- * Setup RAG Search
+ * Setup RAG Chatbot
  */
 function setupRAGSearch() {
     const searchBtn = document.getElementById('rag-search-btn');
     const queryInput = document.getElementById('rag-query-input');
-    const resultsDiv = document.getElementById('rag-results');
-    const toggleRagBtn = document.getElementById('toggle-rag');
-    const ragSearch = document.getElementById('rag-search');
+    const chatMessages = document.getElementById('chat-messages');
 
-    // Toggle RAG panel
-    if (toggleRagBtn && ragSearch) {
-        toggleRagBtn.addEventListener('click', () => {
-            ragSearch.classList.toggle('collapsed');
-            const arrow = toggleRagBtn.querySelector('span');
-            arrow.textContent = ragSearch.classList.contains('collapsed') ? '▶' : '▼';
-        });
-    }
+    // Setup suggestion buttons
+    setupSuggestionButtons();
 
     // Search button click
     if (searchBtn && queryInput) {
-        searchBtn.addEventListener('click', () => performRAGSearch());
-        
-        // Enter key to search
-        queryInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
+        searchBtn.addEventListener('click', () => {
+            performRAGSearch();
+        });
+
+        // Enter key to search (Shift+Enter for newline)
+        queryInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
                 performRAGSearch();
             }
         });
+
+        // Auto-resize textarea
+        queryInput.addEventListener('input', () => {
+            queryInput.style.height = 'auto';
+            queryInput.style.height = queryInput.scrollHeight + 'px';
+        });
+    }
+}
+
+/**
+ * Setup suggestion buttons
+ */
+function setupSuggestionButtons() {
+    const suggestionBtns = document.querySelectorAll('.suggestion-btn');
+    suggestionBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const query = btn.getAttribute('data-query');
+            const queryInput = document.getElementById('rag-query-input');
+            queryInput.value = query;
+            performRAGSearch();
+        });
+    });
+}
+
+/**
+ * Hide welcome screen
+ */
+function hideWelcomeScreen() {
+    const welcome = document.querySelector('.chat-welcome');
+    if (welcome) {
+        welcome.style.display = 'none';
+    }
+}
+
+/**
+ * Add a chat message to the UI
+ */
+function addChatMessage(message, isUser = false, sources = null) {
+    hideWelcomeScreen();
+
+    const chatMessages = document.getElementById('chat-messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message ${isUser ? 'user' : 'assistant'}`;
+
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    let sourcesHTML = '';
+    if (sources && sources.length > 0) {
+        sourcesHTML = `
+            <div class="message-sources">
+                <div class="sources-header">📚 ${sources.length} source${sources.length > 1 ? 's' : ''}</div>
+                ${sources.map((s, i) => `
+                    <div class="source-item">
+                        <span class="source-ref">[${i+1}]</span> ${formatSourceType(s.type)} - ${Math.round(s.relevance_score * 100)}% match
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    messageDiv.innerHTML = `
+        <div class="message-avatar ${isUser ? 'user' : 'assistant'}">
+            ${isUser ? '👤' : '🤖'}
+        </div>
+        <div class="message-content">
+            <div class="message-bubble">${formatAnswerText(message)}</div>
+            ${sourcesHTML}
+            <div class="message-timestamp">${timestamp}</div>
+        </div>
+    `;
+
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    // Store in history
+    chatHistory.push({ message, isUser, timestamp, sources });
+}
+
+/**
+ * Show typing indicator
+ */
+function showTypingIndicator() {
+    const chatMessages = document.getElementById('chat-messages');
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'typing-indicator';
+    typingDiv.id = 'typing-indicator';
+
+    typingDiv.innerHTML = `
+        <div class="message-avatar assistant">🤖</div>
+        <div class="typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+        </div>
+    `;
+
+    chatMessages.appendChild(typingDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+/**
+ * Hide typing indicator
+ */
+function hideTypingIndicator() {
+    const typingIndicator = document.getElementById('typing-indicator');
+    if (typingIndicator) {
+        typingIndicator.remove();
     }
 }
 
@@ -39,17 +143,24 @@ function setupRAGSearch() {
  */
 async function performRAGSearch() {
     const queryInput = document.getElementById('rag-query-input');
-    const resultsDiv = document.getElementById('rag-results');
     const searchBtn = document.getElementById('rag-search-btn');
-    
+    const chatStatus = document.getElementById('chat-status');
+
     const query = queryInput.value.trim();
     if (!query) return;
-    
+
+    // Add user message
+    addChatMessage(query, true);
+
+    // Clear input and reset height
+    queryInput.value = '';
+    queryInput.style.height = 'auto';
+
     // Show loading state
     searchBtn.disabled = true;
-    searchBtn.textContent = 'Searching...';
-    resultsDiv.innerHTML = '<div class="rag-loading">🔍 Searching analytics data...</div>';
-    
+    showTypingIndicator();
+    chatStatus.textContent = 'Searching analytics data...';
+
     try {
         const response = await fetch('/rag/query', {
             method: 'POST',
@@ -59,63 +170,32 @@ async function performRAGSearch() {
                 n_results: 5
             })
         });
-        
+
+        hideTypingIndicator();
+
         if (response.ok) {
             const data = await response.json();
-            displayRAGResults(data);
+
+            if (data.answer) {
+                addChatMessage(data.answer, false, data.sources);
+                chatStatus.textContent = '';
+            } else {
+                addChatMessage('I couldn\'t find any relevant information for that query.', false);
+                chatStatus.textContent = '';
+            }
         } else {
-            resultsDiv.innerHTML = '<div class="rag-error">❌ Search failed. Please try again.</div>';
+            hideTypingIndicator();
+            addChatMessage('Sorry, there was an error processing your request. Please try again.', false);
+            chatStatus.textContent = 'Error occurred';
         }
     } catch (error) {
         console.error('RAG search error:', error);
-        resultsDiv.innerHTML = '<div class="rag-error">❌ Error: ' + error.message + '</div>';
+        hideTypingIndicator();
+        addChatMessage('Sorry, I encountered an error: ' + error.message, false);
+        chatStatus.textContent = 'Connection error';
     } finally {
         searchBtn.disabled = false;
-        searchBtn.textContent = 'Search';
     }
-}
-
-/**
- * Display RAG Search Results
- */
-function displayRAGResults(data) {
-    const resultsDiv = document.getElementById('rag-results');
-    
-    if (!data.answer) {
-        resultsDiv.innerHTML = '<div class="rag-error">No results found.</div>';
-        return;
-    }
-    
-    // Create results HTML
-    let html = `
-        <div class="rag-answer">
-            <div class="rag-answer-header">📊 Answer:</div>
-            <div class="rag-answer-text">${formatAnswerText(data.answer)}</div>
-        </div>
-    `;
-    
-    // Add sources if available
-    if (data.sources && data.sources.length > 0) {
-        html += '<div class="rag-sources">';
-        html += '<div class="rag-sources-header">📚 Sources (' + data.sources.length + '):</div>';
-        html += '<div class="rag-sources-list">';
-        
-        data.sources.forEach((source, idx) => {
-            const relevance = Math.round(source.relevance_score * 100);
-            html += `
-                <div class="rag-source-item">
-                    <span class="source-number">[${idx + 1}]</span>
-                    <span class="source-type">${formatSourceType(source.type)}</span>
-                    <span class="source-relevance">${relevance}%</span>
-                    <div class="source-timestamp">${formatTimestamp(source.timestamp)}</div>
-                </div>
-            `;
-        });
-        
-        html += '</div></div>';
-    }
-    
-    resultsDiv.innerHTML = html;
 }
 
 /**
