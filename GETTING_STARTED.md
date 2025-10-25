@@ -15,10 +15,11 @@ pip install -r requirements.txt
 **What gets installed:**
 - FastAPI (web framework)
 - OpenCV (computer vision)
-- face-recognition (face detection)
+- DeepFace (face detection/recognition - Windows-compatible)
+- TensorFlow (for DeepFace models)
 - Google Gemini AI client
 - yt-dlp & pafy (YouTube support)
-- And more... (17 packages total)
+- And more... (18 packages total)
 
 ---
 
@@ -62,7 +63,7 @@ Duration:            60.0s
 
 **If you see errors:**
 - **YouTube loading fails:** Install `yt-dlp` manually: `pip install yt-dlp --upgrade`
-- **Face detection fails:** Install CMake: `choco install cmake` (Windows)
+- **Face detection fails:** Make sure TensorFlow and DeepFace are installed: `pip install deepface tensorflow`
 - **Import errors:** Reinstall requirements: `pip install -r requirements.txt --force-reinstall`
 
 ---
@@ -272,12 +273,14 @@ python
 ### Face Detection Not Working
 
 ```bash
-# Check face_recognition installation
-python -c "import face_recognition; print('OK')"
+# Check DeepFace installation
+python -c "import deepface; print('OK')"
 
 # Reinstall if needed
-pip uninstall face-recognition face-recognition-models
-pip install face-recognition
+pip install deepface tensorflow --upgrade
+
+# Check TensorFlow
+python -c "import tensorflow as tf; print(tf.__version__)"
 ```
 
 ### Dashboard Won't Load

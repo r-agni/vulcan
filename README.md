@@ -130,7 +130,7 @@ DATABASE_URL=sqlite:///./data/database/video_ai.db
 
 - **FastAPI** - Modern Python web framework
 - **OpenCV** - Computer vision
-- **face_recognition** - Face detection/recognition
+- **DeepFace** - Face detection/recognition (Windows-compatible, no dlib dependency)
 - **Google Gemini 2.5** - AI analysis
 - **SQLAlchemy** - Database ORM
 - **WebSocket** - Real-time updates
@@ -249,7 +249,7 @@ MIT License - Free for educational and commercial use.
 
 ## 🙏 Credits
 
-- **Face Recognition** - Adam Geitgey
+- **DeepFace** - Sefik Ilkin Serengil (Windows-compatible facial recognition)
 - **Google Gemini** - Advanced AI model
 - **FastAPI** - Sebastián Ramírez
 - **OpenCV** - Computer Vision community
