@@ -198,39 +198,58 @@ class AlertGenerator:
             {{
               "alerts": [
                 {{
-                  "title": "Brief alert title",
-                  "message": "Detailed actionable message",
+                  "title": "Brief alert title (e.g., 'Person #123 in Electronics')",
+                  "message": "Concise, actionable message for quick reading",
                   "priority": "low|medium|high|critical",
                   "category": "customer_service|queue_management|security|operations|capacity",
                   "recipient": "salesperson|manager|both",
-                  "person_id": null or number,
+                  "person_id": null or number (REQUIRED for salesperson alerts),
                   "zone_id": null or number,
-                  "zone_name": "zone name if applicable"
+                  "zone_name": "zone name if applicable",
+                  "person_details": {{
+                    "estimated_demographics": "Brief description (age range, gender if evident)",
+                    "appearance": "Brief appearance notes (clothing colors, distinctive features)",
+                    "behavior_summary": "Key behaviors observed",
+                    "zone_history": "Which zones visited and for how long",
+                    "engagement_level": "low|medium|high",
+                    "purchase_intent": "Brief assessment of purchase likelihood",
+                    "recommended_approach": "Specific suggestion for salesperson"
+                  }}
                 }}
               ]
             }}
 
-            ALERT GUIDELINES:
-            
-            For SALESPERSON:
-            - Customer needs assistance (examining products for long time, appears confused)
-            - Customer may need product information
-            - High-value customer opportunity (premium section, returning customer)
-            - Customer showing interest in specific products
-            
-            For MANAGER:
-            - Operational issues (long queues, capacity warnings, unusual patterns)
-            - Staffing needs (need to open more registers, need floor assistance)
+            ALERT PRIORITY GUIDELINES:
+
+            FOCUS HEAVILY on SALESPERSON alerts (aim for 70-80% of alerts):
+            - Customer showing interest (2+ minutes in any product zone)
+            - Customer examining products closely or repeatedly
+            - Customer appears to need assistance or looks confused
+            - High-value customer opportunity (premium section, extended browsing)
+            - Customer returning to same zone multiple times
+            - Customer showing positive body language toward products
+            - Always include person_id and rich person_details for these alerts
+
+            For MANAGER alerts (20-30% of alerts):
+            - Critical operational issues (long queues, capacity warnings)
+            - Staffing needs (need to open more registers, floor coverage)
             - Customer satisfaction risks (frustrated customers, long wait times)
             - System or security concerns
-            
+
+            PERSON DETAILS REQUIREMENTS:
+            - For every SALESPERSON alert, provide comprehensive person_details
+            - Include person_id to enable salesperson to identify the customer
+            - Provide actionable insights based on observed behavior
+            - Suggest specific approaches tailored to the customer's behavior
+            - Note any indicators of purchase intent or product interest
+
             IMPORTANT:
-            - Only generate alerts for situations requiring immediate action
-            - Be specific about location and context
-            - Prioritize customer service and operational efficiency
-            - Avoid redundant or low-priority alerts
-            - Maximum 5 most important alerts
-            
+            - Generate 5-8 alerts, with MOST being for salespeople
+            - Be specific about person identification (Person #X)
+            - Include detailed person_details for every customer-facing alert
+            - Make messages concise for quick reading, details go in person_details
+            - Prioritize customer engagement opportunities over operational issues
+
             Provide ONLY the JSON response, no additional text.
             """
             
@@ -256,7 +275,7 @@ class AlertGenerator:
             
             # Convert to Alert objects
             alerts = []
-            for alert_dict in alert_data.get('alerts', [])[:5]:  # Limit to 5 alerts
+            for alert_dict in alert_data.get('alerts', [])[:8]:  # Limit to 8 alerts
                 try:
                     alert = Alert(
                         id=f"ai_{int(datetime.now().timestamp())}_{len(alerts)}",
@@ -269,13 +288,14 @@ class AlertGenerator:
                         person_id=alert_dict.get('person_id'),
                         zone_id=alert_dict.get('zone_id'),
                         zone_name=alert_dict.get('zone_name'),
-                        context_data={'source': 'ai_generated'}
+                        context_data={'source': 'ai_generated'},
+                        person_details=alert_dict.get('person_details')
                     )
                     alerts.append(alert)
                 except (KeyError, ValueError) as e:
                     print(f"Error parsing alert: {e}")
                     continue
-            
+
             return alerts
             
         except json.JSONDecodeError as e:

@@ -16,6 +16,9 @@ const WS_HOST = window.location.host;
 // State
 let currentAnalysisId = null;
 let overlaySettings = {};
+let currentTabIndex = 0;
+const tabs = ['tab-activity', 'tab-analysis', 'tab-search'];
+const tabNames = ['System Activity', 'Gemini Analysis', 'Search'];
 
 /**
  * Initialize Dashboard
@@ -32,7 +35,7 @@ function initDashboard() {
     // Setup UI event listeners
     setupOverlayControls();
     setupTogglePanel();
-    setupAnalysisToggle();
+    setupTabNavigation();
 
     // Load overlay settings
     loadOverlaySettings();
@@ -326,48 +329,117 @@ function createAlertCard(alert) {
     const card = document.createElement('div');
     card.className = `alert-card alert-${alert.priority}`;
     card.dataset.alertId = alert.id;
-    
+
     // Icon and title
     const header = document.createElement('div');
     header.className = 'alert-header';
-    
+
     const icon = document.createElement('span');
     icon.className = 'alert-icon';
     icon.textContent = getCategoryIcon(alert.category);
-    
+
     const title = document.createElement('span');
     title.className = 'alert-title';
     title.textContent = alert.title;
-    
-    header.appendChild(icon);
-    header.appendChild(title);
-    
+
+    // Add person ID badge if available
+    if (alert.person_id) {
+        const personBadge = document.createElement('span');
+        personBadge.className = 'person-badge';
+        personBadge.textContent = `#${alert.person_id}`;
+        header.appendChild(icon);
+        header.appendChild(title);
+        header.appendChild(personBadge);
+    } else {
+        header.appendChild(icon);
+        header.appendChild(title);
+    }
+
     // Message
     const message = document.createElement('div');
     message.className = 'alert-message';
     message.textContent = alert.message;
-    
+
+    // Person details dropdown (if available)
+    let detailsSection = null;
+    if (alert.person_details && Object.keys(alert.person_details).length > 0) {
+        const detailsContainer = document.createElement('div');
+        detailsContainer.className = 'alert-details-container';
+
+        const detailsToggle = document.createElement('button');
+        detailsToggle.className = 'alert-details-toggle';
+        detailsToggle.innerHTML = '<span class="toggle-arrow">▶</span> Show Details';
+
+        detailsSection = document.createElement('div');
+        detailsSection.className = 'alert-details-content';
+        detailsSection.style.display = 'none';
+
+        // Build details content
+        const details = alert.person_details;
+        let detailsHTML = '<div class="person-details-grid">';
+
+        if (details.estimated_demographics) {
+            detailsHTML += `<div class="detail-item"><strong>Demographics:</strong> ${details.estimated_demographics}</div>`;
+        }
+        if (details.appearance) {
+            detailsHTML += `<div class="detail-item"><strong>Appearance:</strong> ${details.appearance}</div>`;
+        }
+        if (details.behavior_summary) {
+            detailsHTML += `<div class="detail-item"><strong>Behavior:</strong> ${details.behavior_summary}</div>`;
+        }
+        if (details.zone_history) {
+            detailsHTML += `<div class="detail-item"><strong>Zone History:</strong> ${details.zone_history}</div>`;
+        }
+        if (details.engagement_level) {
+            detailsHTML += `<div class="detail-item"><strong>Engagement:</strong> <span class="engagement-${details.engagement_level}">${details.engagement_level.toUpperCase()}</span></div>`;
+        }
+        if (details.purchase_intent) {
+            detailsHTML += `<div class="detail-item"><strong>Purchase Intent:</strong> ${details.purchase_intent}</div>`;
+        }
+        if (details.recommended_approach) {
+            detailsHTML += `<div class="detail-item detail-recommendation"><strong>Recommended Approach:</strong> ${details.recommended_approach}</div>`;
+        }
+
+        detailsHTML += '</div>';
+        detailsSection.innerHTML = detailsHTML;
+
+        // Toggle functionality
+        detailsToggle.onclick = (e) => {
+            e.stopPropagation();
+            const isExpanded = detailsSection.style.display !== 'none';
+            detailsSection.style.display = isExpanded ? 'none' : 'block';
+            detailsToggle.innerHTML = isExpanded
+                ? '<span class="toggle-arrow">▶</span> Show Details'
+                : '<span class="toggle-arrow">▼</span> Hide Details';
+            detailsToggle.classList.toggle('expanded', !isExpanded);
+        };
+
+        detailsContainer.appendChild(detailsToggle);
+        detailsContainer.appendChild(detailsSection);
+        message.appendChild(detailsContainer);
+    }
+
     // Footer with recipient badge and dismiss button
     const footer = document.createElement('div');
     footer.className = 'alert-footer';
-    
+
     const recipientBadge = document.createElement('span');
     recipientBadge.className = `recipient-badge recipient-${alert.recipient}`;
     recipientBadge.textContent = formatRecipient(alert.recipient);
-    
+
     const dismissBtn = document.createElement('button');
     dismissBtn.className = 'alert-dismiss-btn';
     dismissBtn.textContent = '✕';
     dismissBtn.onclick = () => dismissAlert(alert.id);
-    
+
     footer.appendChild(recipientBadge);
     footer.appendChild(dismissBtn);
-    
+
     // Assemble card
     card.appendChild(header);
     card.appendChild(message);
     card.appendChild(footer);
-    
+
     return card;
 }
 
@@ -494,24 +566,55 @@ function setupTogglePanel() {
 }
 
 /**
- * Setup Live Analysis Toggle
+ * Setup Tab Navigation
  */
-function setupAnalysisToggle() {
-    const toggleBtn = document.getElementById('toggle-analysis');
-    const analysisFeed = document.getElementById('analysis-feed');
+function setupTabNavigation() {
+    const prevBtn = document.getElementById('tab-prev');
+    const nextBtn = document.getElementById('tab-next');
+    const tabNameEl = document.getElementById('current-tab-name');
 
-    if (toggleBtn && analysisFeed) {
-        toggleBtn.addEventListener('click', () => {
-            analysisFeed.classList.toggle('collapsed');
-            const arrow = toggleBtn.querySelector('span');
-            
-            // Toggle arrow direction
-            if (analysisFeed.classList.contains('collapsed')) {
-                arrow.textContent = '▶';
-            } else {
-                arrow.textContent = '▼';
+    if (prevBtn && nextBtn && tabNameEl) {
+        prevBtn.addEventListener('click', () => switchTab(-1));
+        nextBtn.addEventListener('click', () => switchTab(1));
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.altKey && e.key === 'ArrowLeft') {
+                e.preventDefault();
+                switchTab(-1);
+            } else if (e.altKey && e.key === 'ArrowRight') {
+                e.preventDefault();
+                switchTab(1);
             }
         });
+    }
+}
+
+/**
+ * Switch to a different tab
+ */
+function switchTab(direction) {
+    // Calculate new tab index with wrapping
+    currentTabIndex = (currentTabIndex + direction + tabs.length) % tabs.length;
+
+    // Hide all tabs
+    tabs.forEach(tabId => {
+        const tabPanel = document.getElementById(tabId);
+        if (tabPanel) {
+            tabPanel.classList.remove('active');
+        }
+    });
+
+    // Show current tab
+    const activeTab = document.getElementById(tabs[currentTabIndex]);
+    if (activeTab) {
+        activeTab.classList.add('active');
+    }
+
+    // Update tab name
+    const tabNameEl = document.getElementById('current-tab-name');
+    if (tabNameEl) {
+        tabNameEl.textContent = tabNames[currentTabIndex];
     }
 }
 

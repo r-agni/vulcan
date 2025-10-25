@@ -614,8 +614,8 @@ async def video_feed():
         while True:
             frame = camera.get_current_frame()
             if frame is not None:
-                # Get analytics data
-                trajectories = trajectory_tracker.active_trajectories
+                # Get analytics data (create copies to avoid concurrent modification)
+                trajectories = dict(trajectory_tracker.active_trajectories)
                 heatmap = heatmap_generator.generate_heatmap_overlay()
 
                 # Format zones for display with actual occupancy

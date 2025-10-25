@@ -12,9 +12,10 @@ class AlertRules:
     """Business rules for alert generation"""
     
     # Dwell time thresholds (seconds)
-    DWELL_TIME_ASSISTANCE_THRESHOLD = 300  # 5 minutes
-    DWELL_TIME_EXTENDED_THRESHOLD = 600    # 10 minutes
-    DWELL_TIME_UNUSUAL_THRESHOLD = 900     # 15 minutes
+    DWELL_TIME_INITIAL_INTEREST = 120      # 2 minutes - initial interest
+    DWELL_TIME_ASSISTANCE_THRESHOLD = 300  # 5 minutes - may need help
+    DWELL_TIME_EXTENDED_THRESHOLD = 600    # 10 minutes - definitely interested
+    DWELL_TIME_UNUSUAL_THRESHOLD = 900     # 15 minutes - unusual pattern
     
     # Queue thresholds
     QUEUE_LENGTH_WARNING = 5
@@ -66,17 +67,27 @@ class AlertRules:
             }
         elif dwell_time >= AlertRules.DWELL_TIME_EXTENDED_THRESHOLD:
             return {
-                'priority': AlertPriority.MEDIUM,
+                'priority': AlertPriority.HIGH,
                 'category': AlertCategory.CUSTOMER_SERVICE,
-                'recipient': AlertRecipient.BOTH,
-                'reason': f'Extended dwell time: {int(dwell_time//60)} minutes'
+                'recipient': AlertRecipient.SALESPERSON,
+                'reason': f'High interest customer: {int(dwell_time//60)} minutes in zone',
+                'salesperson_priority': True
             }
         elif dwell_time >= AlertRules.DWELL_TIME_ASSISTANCE_THRESHOLD:
             return {
                 'priority': AlertPriority.MEDIUM,
                 'category': AlertCategory.CUSTOMER_SERVICE,
                 'recipient': AlertRecipient.SALESPERSON,
-                'reason': f'Customer may need assistance: {int(dwell_time//60)} minutes in zone'
+                'reason': f'Customer may need assistance: {int(dwell_time//60)} minutes in zone',
+                'salesperson_priority': True
+            }
+        elif dwell_time >= AlertRules.DWELL_TIME_INITIAL_INTEREST:
+            return {
+                'priority': AlertPriority.MEDIUM,
+                'category': AlertCategory.CUSTOMER_SERVICE,
+                'recipient': AlertRecipient.SALESPERSON,
+                'reason': f'Customer showing interest: {int(dwell_time//60)} minutes in zone',
+                'salesperson_priority': True
             }
         return None
     
@@ -212,3 +223,39 @@ class AlertRules:
             'reason': f'System issue: {error_type}',
             'context': details
         }
+
+    @staticmethod
+    def should_alert_person_entry(zone_type: str, is_premium_zone: bool = False) -> Optional[Dict[str, Any]]:
+        """Alert when person enters important zones"""
+        if is_premium_zone or zone_type in ['premium', 'high_value', 'jewelry', 'electronics']:
+            return {
+                'priority': AlertPriority.MEDIUM,
+                'category': AlertCategory.CUSTOMER_SERVICE,
+                'recipient': AlertRecipient.SALESPERSON,
+                'reason': 'Customer entered premium area',
+                'salesperson_priority': True
+            }
+        return None
+
+    @staticmethod
+    def should_alert_multiple_visits(visit_count: int, zone_name: str) -> Optional[Dict[str, Any]]:
+        """Alert when customer returns to same zone multiple times"""
+        if visit_count >= 3:
+            return {
+                'priority': AlertPriority.HIGH,
+                'category': AlertCategory.CUSTOMER_SERVICE,
+                'recipient': AlertRecipient.SALESPERSON,
+                'reason': f'Customer returned to {zone_name} {visit_count} times',
+                'context': 'Strong purchase intent detected',
+                'salesperson_priority': True
+            }
+        elif visit_count >= 2:
+            return {
+                'priority': AlertPriority.MEDIUM,
+                'category': AlertCategory.CUSTOMER_SERVICE,
+                'recipient': AlertRecipient.SALESPERSON,
+                'reason': f'Customer returned to {zone_name}',
+                'context': 'Repeat interest detected',
+                'salesperson_priority': True
+            }
+        return None

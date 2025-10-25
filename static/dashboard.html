@@ -28,134 +28,138 @@
 
         <!-- Main Content Area -->
         <div class="main-content">
-            <!-- Video Feed (Left - 70%) -->
-            <div class="video-section">
-                <div class="video-container">
-                    <img id="video-feed" src="/video_feed" alt="Live Video Feed">
+            <!-- Top Section: Video + Live Metrics -->
+            <div class="top-section">
+                <!-- Video Feed (Left - 70%) -->
+                <div class="video-section">
+                    <div class="video-container">
+                        <img id="video-feed" src="/video_feed" alt="Live Video Feed">
+                    </div>
+
+                    <!-- Overlay Settings Panel (Hidden by default) -->
+                    <div class="overlay-settings" id="overlay-settings">
+                        <h3>Overlay Controls</h3>
+                        <div class="overlay-grid">
+                            <label class="overlay-item">
+                                <input type="checkbox" name="bounding_boxes" checked>
+                                <span>Bounding Boxes</span>
+                            </label>
+                            <label class="overlay-item">
+                                <input type="checkbox" name="trajectories" checked>
+                                <span>Trajectories</span>
+                            </label>
+                            <label class="overlay-item">
+                                <input type="checkbox" name="zones" checked>
+                                <span>Zone Boundaries</span>
+                            </label>
+                            <label class="overlay-item">
+                                <input type="checkbox" name="virtual_lines" checked>
+                                <span>Virtual Lines</span>
+                            </label>
+                            <label class="overlay-item">
+                                <input type="checkbox" name="heatmap">
+                                <span>Traffic Heatmap</span>
+                            </label>
+                            <label class="overlay-item">
+                                <input type="checkbox" name="proximity" checked>
+                                <span>Proximity Circles</span>
+                            </label>
+                            <label class="overlay-item">
+                                <input type="checkbox" name="labels" checked>
+                                <span>Labels & Info</span>
+                            </label>
+                            <label class="overlay-item">
+                                <input type="checkbox" name="alerts" checked>
+                                <span>Alert Badges</span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Overlay Settings Panel (Hidden by default) -->
-                <div class="overlay-settings" id="overlay-settings">
-                    <h3>Overlay Controls</h3>
-                    <div class="overlay-grid">
-                        <label class="overlay-item">
-                            <input type="checkbox" name="bounding_boxes" checked>
-                            <span>Bounding Boxes</span>
-                        </label>
-                        <label class="overlay-item">
-                            <input type="checkbox" name="trajectories" checked>
-                            <span>Trajectories</span>
-                        </label>
-                        <label class="overlay-item">
-                            <input type="checkbox" name="zones" checked>
-                            <span>Zone Boundaries</span>
-                        </label>
-                        <label class="overlay-item">
-                            <input type="checkbox" name="virtual_lines" checked>
-                            <span>Virtual Lines</span>
-                        </label>
-                        <label class="overlay-item">
-                            <input type="checkbox" name="heatmap">
-                            <span>Traffic Heatmap</span>
-                        </label>
-                        <label class="overlay-item">
-                            <input type="checkbox" name="proximity" checked>
-                            <span>Proximity Circles</span>
-                        </label>
-                        <label class="overlay-item">
-                            <input type="checkbox" name="labels" checked>
-                            <span>Labels & Info</span>
-                        </label>
-                        <label class="overlay-item">
-                            <input type="checkbox" name="alerts" checked>
-                            <span>Alert Badges</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Sidebar (Right - 30%) -->
-            <aside class="sidebar">
-                <!-- Live Metrics -->
-                <section class="panel metrics-panel">
-                    <h2 class="panel-title">Live Metrics</h2>
-                    <div class="metrics-grid">
-                        <div class="metric-item">
-                            <div class="metric-label">Current Customers</div>
-                            <div class="metric-value" id="metric-occupancy">0</div>
-                        </div>
-                        <div class="metric-item">
-                            <div class="metric-label">Peak Today</div>
-                            <div class="metric-value" id="metric-peak">0</div>
-                        </div>
-                        <div class="metric-item">
-                            <div class="metric-label">Avg Dwell Time</div>
-                            <div class="metric-value" id="metric-dwell">0s</div>
-                        </div>
-                        <div class="metric-item">
-                            <div class="metric-label">Active Tracking</div>
-                            <div class="metric-value" id="metric-tracking">0</div>
-                        </div>
-                        <div class="metric-item">
-                            <div class="metric-label">Entries Today</div>
-                            <div class="metric-value" id="metric-entries">0</div>
-                        </div>
-                        <div class="metric-item">
-                            <div class="metric-label">Active Zones</div>
-                            <div class="metric-value" id="metric-zones">0</div>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- System Activity -->
-                <section class="panel activity-panel">
-                    <h2 class="panel-title">System Activity</h2>
-                    <div class="activity-feed" id="activity-feed">
-                        <div class="activity-item">
-                            <span class="activity-icon">●</span>
-                            <span class="activity-text">System initializing...</span>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Live Analysis -->
-                <section class="panel analysis-panel">
-                    <div class="panel-header">
-                        <h2 class="panel-title">Live Analysis</h2>
-                        <button class="toggle-btn-small" id="toggle-analysis">
-                            <span>▼</span>
-                        </button>
-                    </div>
-                    <div class="analysis-feed" id="analysis-feed">
-                        <div class="analysis-placeholder">
-                            Waiting for analysis...
-                        </div>
-                    </div>
-                </section>
-
-                <!-- RAG Search -->
-                <section class="panel rag-panel">
-                    <div class="panel-header">
-                        <h2 class="panel-title">🔍 Ask Questions</h2>
-                        <button class="toggle-btn-small" id="toggle-rag">
-                            <span>▼</span>
-                        </button>
-                    </div>
-                    <div class="rag-search" id="rag-search">
-                        <div class="search-container">
-                            <input type="text" id="rag-query-input" 
-                                   placeholder="Ask about behaviors, zones, customers..." 
-                                   class="search-input">
-                            <button id="rag-search-btn" class="search-btn">Search</button>
-                        </div>
-                        <div class="rag-results" id="rag-results">
-                            <div class="rag-placeholder">
-                                Ask questions about customer behaviors, zone activity, emotional states, or any analytics data.
+                <!-- Live Metrics (Right - 30%) -->
+                <aside class="metrics-sidebar">
+                    <section class="panel metrics-panel">
+                        <h2 class="panel-title">Live Metrics</h2>
+                        <div class="metrics-grid">
+                            <div class="metric-item">
+                                <div class="metric-label">Current Customers</div>
+                                <div class="metric-value" id="metric-occupancy">0</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label">Peak Today</div>
+                                <div class="metric-value" id="metric-peak">0</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label">Avg Dwell Time</div>
+                                <div class="metric-value" id="metric-dwell">0s</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label">Active Tracking</div>
+                                <div class="metric-value" id="metric-tracking">0</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label">Entries Today</div>
+                                <div class="metric-value" id="metric-entries">0</div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-label">Active Zones</div>
+                                <div class="metric-value" id="metric-zones">0</div>
                             </div>
                         </div>
+                    </section>
+                </aside>
+            </div>
+
+            <!-- Bottom Section: Tabbed Panels -->
+            <div class="bottom-section">
+                <!-- Tab Navigation -->
+                <div class="tab-navigation">
+                    <button class="tab-arrow tab-arrow-left" id="tab-prev">◀</button>
+                    <div class="tab-indicator">
+                        <span class="tab-name" id="current-tab-name">System Activity</span>
                     </div>
-                </section>
-            </aside>
+                    <button class="tab-arrow tab-arrow-right" id="tab-next">▶</button>
+                </div>
+
+                <!-- Tab Content Container -->
+                <div class="tab-content-container">
+                    <!-- System Activity Tab -->
+                    <section class="tab-panel active" id="tab-activity" data-tab-name="System Activity">
+                        <div class="activity-feed" id="activity-feed">
+                            <div class="activity-item">
+                                <span class="activity-icon">●</span>
+                                <span class="activity-text">System initializing...</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Gemini Analysis Tab -->
+                    <section class="tab-panel" id="tab-analysis" data-tab-name="Gemini Analysis">
+                        <div class="analysis-feed" id="analysis-feed">
+                            <div class="analysis-placeholder">
+                                Waiting for analysis...
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- RAG Search Tab -->
+                    <section class="tab-panel" id="tab-search" data-tab-name="Search">
+                        <div class="rag-search-container">
+                            <div class="search-input-group">
+                                <input type="text" id="rag-query-input"
+                                       placeholder="Ask about behaviors, zones, customers..."
+                                       class="search-input">
+                                <button id="rag-search-btn" class="search-btn">Search</button>
+                            </div>
+                            <div class="rag-results" id="rag-results">
+                                <div class="rag-placeholder">
+                                    Ask questions about customer behaviors, zone activity, emotional states, or any analytics data.
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
         </div>
     </div>
 

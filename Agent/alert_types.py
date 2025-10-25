@@ -52,6 +52,8 @@ class Alert:
     expires_at: Optional[datetime] = None
     acknowledged_at: Optional[datetime] = None
     acknowledged_by: Optional[str] = None
+    # Person-specific details for salesperson alerts
+    person_details: Optional[Dict[str, Any]] = None  # Demographics, appearance, behavior history
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert alert to dictionary for JSON serialization"""
@@ -70,7 +72,8 @@ class Alert:
             'context_data': self.context_data,
             'expires_at': self.expires_at.isoformat() if self.expires_at else None,
             'acknowledged_at': self.acknowledged_at.isoformat() if self.acknowledged_at else None,
-            'acknowledged_by': self.acknowledged_by
+            'acknowledged_by': self.acknowledged_by,
+            'person_details': self.person_details
         }
     
     def get_color(self) -> str:
