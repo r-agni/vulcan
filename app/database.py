@@ -171,6 +171,31 @@ class ProductInteraction(Base):
     engagement_score = Column(Float, nullable=True)  # 0-1
 
 
+class AlertLog(Base):
+    """Store alert history for analysis and reporting"""
+    __tablename__ = "alert_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    alert_id = Column(String, nullable=False, index=True)  # Unique alert identifier
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    priority = Column(String, nullable=False)  # low, medium, high, critical
+    category = Column(String, nullable=False)  # customer_service, queue_management, etc.
+    recipient = Column(String, nullable=False)  # salesperson, manager, both
+    status = Column(String, default="active")  # active, acknowledged, expired, dismissed
+    
+    person_id = Column(Integer, nullable=True)
+    zone_id = Column(Integer, nullable=True)
+    zone_name = Column(String, nullable=True)
+    
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    expires_at = Column(DateTime, nullable=True)
+    acknowledged_at = Column(DateTime, nullable=True)
+    acknowledged_by = Column(String, nullable=True)
+    
+    context_data = Column(JSON, nullable=True)  # Additional context
+
+
 def init_db():
     """Initialize database tables"""
     Base.metadata.create_all(bind=engine)

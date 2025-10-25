@@ -21,6 +21,11 @@
             </div>
         </header>
 
+        <!-- Alert Banner -->
+        <div class="alert-banner" id="alert-banner">
+            <!-- Alerts will be dynamically inserted here -->
+        </div>
+
         <!-- Main Content Area -->
         <div class="main-content">
             <!-- Video Feed (Left - 70%) -->
@@ -127,6 +132,29 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- RAG Search -->
+                <section class="panel rag-panel">
+                    <div class="panel-header">
+                        <h2 class="panel-title">🔍 Ask Questions</h2>
+                        <button class="toggle-btn-small" id="toggle-rag">
+                            <span>▼</span>
+                        </button>
+                    </div>
+                    <div class="rag-search" id="rag-search">
+                        <div class="search-container">
+                            <input type="text" id="rag-query-input" 
+                                   placeholder="Ask about behaviors, zones, customers..." 
+                                   class="search-input">
+                            <button id="rag-search-btn" class="search-btn">Search</button>
+                        </div>
+                        <div class="rag-results" id="rag-results">
+                            <div class="rag-placeholder">
+                                Ask questions about customer behaviors, zone activity, emotional states, or any analytics data.
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </aside>
         </div>
     </div>
@@ -138,5 +166,6 @@
     </div>
 
     <script src="/static/dashboard.js"></script>
+    <script src="/static/rag-search.js"></script>
 </body>
 </html>

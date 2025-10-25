@@ -61,12 +61,151 @@ h3 {
 
 /* Header */
 .header {
-    background-color: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
-    padding: 1.5rem 2rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    padding: 1.5rem 2rem;
+    background: rgba(20, 20, 20, 0.9);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Alert Banner */
+.alert-banner {
+    display: none;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem 2rem;
+    background: rgba(15, 15, 15, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.alert-card {
+    background: rgba(30, 30, 30, 0.9);
+    border-left: 4px solid;
+    border-radius: 8px;
+    padding: 1rem;
+    animation: slideIn 0.3s ease;
+    transition: all 0.3s ease;
+}
+
+.alert-card:hover {
+    background: rgba(35, 35, 35, 0.9);
+    transform: translateX(5px);
+}
+
+.alert-low {
+    border-color: #4A90E2;
+}
+
+.alert-medium {
+    border-color: #F5A623;
+}
+
+.alert-high {
+    border-color: #E94B3C;
+}
+
+.alert-critical {
+    border-color: #D0021B;
+    animation: pulse 2s infinite;
+}
+
+.alert-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.alert-icon {
+    font-size: 1.2rem;
+}
+
+.alert-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #FFFFFF;
+}
+
+.alert-message {
+    color: #C0C0C0;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+}
+
+.alert-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.recipient-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.recipient-salesperson {
+    background: rgba(74, 144, 226, 0.2);
+    color: #4A90E2;
+}
+
+.recipient-manager {
+    background: rgba(233, 75, 60, 0.2);
+    color: #E94B3C;
+}
+
+.recipient-both {
+    background: rgba(245, 166, 35, 0.2);
+    color: #F5A623;
+}
+
+.alert-dismiss-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: #999;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.alert-dismiss-btn:hover {
+    background: rgba(233, 75, 60, 0.3);
+    color: #E94B3C;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(20px);
+    }
 }
 
 .title {

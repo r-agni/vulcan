@@ -7,6 +7,7 @@
 let activityWS = null;
 let analysisWS = null;
 let metricsWS = null;
+let alertsWS = null;
 
 // Configuration
 const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -26,6 +27,7 @@ function initDashboard() {
     connectActivityWebSocket();
     connectAnalysisWebSocket();
     connectMetricsWebSocket();
+    connectAlertsWebSocket();
 
     // Setup UI event listeners
     setupOverlayControls();
@@ -106,6 +108,40 @@ function connectAnalysisWebSocket() {
     analysisWS.onclose = () => {
         console.log('Analysis WebSocket closed. Reconnecting in 3s...');
         setTimeout(connectAnalysisWebSocket, 3000);
+    };
+}
+
+/**
+ * Connect to Alerts WebSocket
+ */
+function connectAlertsWebSocket() {
+    const wsUrl = `${WS_PROTOCOL}//${WS_HOST}/ws/alerts`;
+    console.log('Connecting to alerts stream:', wsUrl);
+
+    alertsWS = new WebSocket(wsUrl);
+
+    alertsWS.onopen = () => {
+        console.log('Alerts WebSocket connected');
+    };
+
+    alertsWS.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'alerts' && data.data) {
+                updateAlerts(data.data);
+            }
+        } catch (error) {
+            console.error('Error parsing alerts message:', error);
+        }
+    };
+
+    alertsWS.onerror = (error) => {
+        console.error('Alerts WebSocket error:', error);
+    };
+
+    alertsWS.onclose = () => {
+        console.log('Alerts WebSocket closed. Reconnecting in 3s...');
+        setTimeout(connectAlertsWebSocket, 3000);
     };
 }
 
@@ -258,6 +294,133 @@ function updateMetrics(metrics) {
             }, 10);
         }
     });
+}
+
+/**
+ * Update Alerts Display
+ */
+function updateAlerts(alerts) {
+    const alertBanner = document.getElementById('alert-banner');
+    
+    // Clear existing alerts
+    alertBanner.innerHTML = '';
+    
+    if (!alerts || alerts.length === 0) {
+        alertBanner.style.display = 'none';
+        return;
+    }
+    
+    alertBanner.style.display = 'flex';
+    
+    // Display up to 5 most important alerts
+    alerts.slice(0, 5).forEach(alert => {
+        const alertCard = createAlertCard(alert);
+        alertBanner.appendChild(alertCard);
+    });
+}
+
+/**
+ * Create Alert Card Element
+ */
+function createAlertCard(alert) {
+    const card = document.createElement('div');
+    card.className = `alert-card alert-${alert.priority}`;
+    card.dataset.alertId = alert.id;
+    
+    // Icon and title
+    const header = document.createElement('div');
+    header.className = 'alert-header';
+    
+    const icon = document.createElement('span');
+    icon.className = 'alert-icon';
+    icon.textContent = getCategoryIcon(alert.category);
+    
+    const title = document.createElement('span');
+    title.className = 'alert-title';
+    title.textContent = alert.title;
+    
+    header.appendChild(icon);
+    header.appendChild(title);
+    
+    // Message
+    const message = document.createElement('div');
+    message.className = 'alert-message';
+    message.textContent = alert.message;
+    
+    // Footer with recipient badge and dismiss button
+    const footer = document.createElement('div');
+    footer.className = 'alert-footer';
+    
+    const recipientBadge = document.createElement('span');
+    recipientBadge.className = `recipient-badge recipient-${alert.recipient}`;
+    recipientBadge.textContent = formatRecipient(alert.recipient);
+    
+    const dismissBtn = document.createElement('button');
+    dismissBtn.className = 'alert-dismiss-btn';
+    dismissBtn.textContent = '✕';
+    dismissBtn.onclick = () => dismissAlert(alert.id);
+    
+    footer.appendChild(recipientBadge);
+    footer.appendChild(dismissBtn);
+    
+    // Assemble card
+    card.appendChild(header);
+    card.appendChild(message);
+    card.appendChild(footer);
+    
+    return card;
+}
+
+/**
+ * Get Category Icon
+ */
+function getCategoryIcon(category) {
+    const icons = {
+        'customer_service': '🛎️',
+        'queue_management': '⏱️',
+        'security': '🔒',
+        'operations': '⚙️',
+        'capacity': '👥',
+        'system': '💻'
+    };
+    return icons[category] || 'ℹ️';
+}
+
+/**
+ * Format Recipient Text
+ */
+function formatRecipient(recipient) {
+    const map = {
+        'salesperson': 'Sales',
+        'manager': 'Manager',
+        'both': 'All Staff'
+    };
+    return map[recipient] || recipient;
+}
+
+/**
+ * Dismiss Alert
+ */
+async function dismissAlert(alertId) {
+    try {
+        const response = await fetch(`/api/alerts/${alertId}/dismiss`, {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            // Remove alert card with animation
+            const card = document.querySelector(`[data-alert-id="${alertId}"]`);
+            if (card) {
+                card.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => card.remove(), 300);
+            }
+            console.log(`Alert ${alertId} dismissed`);
+        } else {
+            console.error('Failed to dismiss alert');
+        }
+    } catch (error) {
+        console.error('Error dismissing alert:', error);
+    }
 }
 
 /**
@@ -432,6 +595,9 @@ document.addEventListener('visibilitychange', () => {
         if (metricsWS.readyState !== WebSocket.OPEN) {
             connectMetricsWebSocket();
         }
+        if (alertsWS && alertsWS.readyState !== WebSocket.OPEN) {
+            connectAlertsWebSocket();
+        }
     }
 });
 
@@ -442,4 +608,5 @@ window.addEventListener('beforeunload', () => {
     if (activityWS) activityWS.close();
     if (analysisWS) analysisWS.close();
     if (metricsWS) metricsWS.close();
+    if (alertsWS) alertsWS.close();
 });

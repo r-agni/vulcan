@@ -19,11 +19,22 @@ from retail_analytics import (
     OccupancyCounter, LineCrossingDetector, HeatmapGenerator, QueueDetector
 )
 from dotenv import load_dotenv
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from Agent import AlertGenerator, AlertManager
+
+# Import RAG system
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rag.rag_api import create_rag_router
 
 load_dotenv()
 
 # Initialize FastAPI app
 app = FastAPI(title="Video AI Surveillance System")
+
+# Add RAG router
+rag_router = create_rag_router()
+app.include_router(rag_router)
 
 # Initialize components
 camera = CameraManager(camera_source="https://www.youtube.com/watch?v=KMJS66jBtVQ")
@@ -40,9 +51,14 @@ line_crossing_detector = LineCrossingDetector()
 heatmap_generator = HeatmapGenerator(width=1280, height=720, resolution=20)
 queue_detector = QueueDetector()
 
+# Initialize Alert System
+alert_generator = AlertGenerator(api_key=os.getenv("GEMINI_API_KEY"))
+alert_manager = AlertManager(max_queue_size=50, alert_expiry_seconds=600)
+
 # WebSocket connections
 active_connections: List[WebSocket] = []
 metrics_connections: List[WebSocket] = []
+alert_connections: List[WebSocket] = []
 
 # Global state
 current_detected_person = None
@@ -155,17 +171,17 @@ def initialize_zones_with_gemini():
         print(f"FULL ERROR TRACEBACK:\n{error_details}")
 
 
-def continuous_gemini_analysis():
-    """Continuously analyze video and stream analysis to dashboard"""
+def continuous_gemini_analysis_and_alerts():
+    """Continuously analyze video with Gemini and generate alerts every 5 seconds"""
     try:
         import time
 
-        log_activity("🤖 Gemini continuous analysis started", "system")
+        log_activity("🤖 Gemini analysis + alert system started", "system")
 
         # Wait for system to stabilize
         time.sleep(5)
 
-        frame_analysis_interval = 10  # Analyze every 10 seconds
+        frame_analysis_interval = 5  # Analyze every 5 seconds
         last_analysis_time = 0
 
         while True:
@@ -188,6 +204,7 @@ def continuous_gemini_analysis():
                 # Analyze frame with Gemini
                 analysis_result = gemini_analyzer.analyze_single_frame(frame_path)
 
+                analysis_text = None
                 if "error" not in analysis_result:
                     analysis_text = analysis_result.get("frame_analysis", "")
 
@@ -198,6 +215,66 @@ def continuous_gemini_analysis():
 
                     # Also log to activity feed
                     log_activity(f"📊 Gemini: {analysis_text[:100]}...", "analysis")
+
+                # === INTEGRATED ALERT GENERATION ===
+                # Prepare comprehensive analytics data
+                analytics_data = {
+                    'total_occupancy': current_metrics.get('occupancy', 0),
+                    'occupancy': [],
+                    'dwell_times': [],
+                    'queue_metrics': []
+                }
+                
+                # Add zone occupancy data
+                for zone in zones_data:
+                    zone_id = zone.get('id')
+                    if zone_id:
+                        zone_occupancy = occupancy_counter.get_occupancy(zone_id)
+                        analytics_data['occupancy'].append({
+                            'zone_id': zone_id,
+                            'zone_name': zone.get('name', f'Zone {zone_id}'),
+                            'current': zone_occupancy,
+                            'capacity': zone.get('max_capacity', 0)
+                        })
+                
+                # Add dwell time data
+                for (person_id, zone_id), entry_data in dwell_calculator.zone_entries.items():
+                    zone_name = next((z['name'] for z in zones_data if z.get('id') == zone_id), f'Zone {zone_id}')
+                    zone_type = next((z['type'] for z in zones_data if z.get('id') == zone_id), 'product')
+                    dwell_time = (datetime.utcnow() - entry_data['entry_time']).total_seconds()
+                    
+                    analytics_data['dwell_times'].append({
+                        'person_id': person_id,
+                        'zone_id': zone_id,
+                        'zone_name': zone_name,
+                        'zone_type': zone_type,
+                        'duration': dwell_time
+                    })
+                
+                # Create timestamp-specific data package
+                timestamp_data = {
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'frame_time': timestamp_str,
+                    'detections': len(current_detections),
+                    'active_persons': list(occupancy_counter.current_occupancy.get(None, set())),
+                    'zones_snapshot': analytics_data['occupancy'].copy(),
+                    'gemini_analysis': analysis_text
+                }
+                
+                # Generate alerts with combined data
+                alerts = alert_generator.analyze_and_generate_alerts(
+                    analytics_data=analytics_data,
+                    behavior_analysis=analysis_text,
+                    timestamp_data=timestamp_data
+                )
+                
+                # Add alerts to manager
+                added_alerts = alert_manager.add_alerts(alerts)
+                
+                # Broadcast new alerts
+                if added_alerts:
+                    log_activity(f"🚨 Generated {len(added_alerts)} new alert(s)", "system")
+                    asyncio.run(broadcast_alert_update())
 
                 # Clean up temporary file
                 try:
@@ -210,8 +287,10 @@ def continuous_gemini_analysis():
             time.sleep(1)
 
     except Exception as e:
-        log_activity(f"❌ Error in continuous Gemini analysis: {str(e)}", "system")
-        print(f"Error in continuous_gemini_analysis: {e}")
+        log_activity(f"❌ Error in continuous analysis: {str(e)}", "system")
+        print(f"Error in continuous_gemini_analysis_and_alerts: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @app.on_event("startup")
@@ -241,14 +320,16 @@ async def startup_event():
 
     # Always use Gemini to analyze video and generate zones/lines
     log_activity("🤖 Using Gemini AI to analyze video layout...", "system")
+    print("DEBUG: Starting Gemini zone generation thread...")
     threading.Thread(target=initialize_zones_with_gemini, daemon=True).start()
+    print("DEBUG: Thread started")
 
     # Register frame callback for detection
     camera.register_frame_callback(process_frame)
     log_activity("✓ System ready - Real-time detection active", "system")
 
-    # Start continuous Gemini analysis streaming
-    threading.Thread(target=continuous_gemini_analysis, daemon=True).start()
+    # Start integrated Gemini analysis + alert generation (every 5 seconds)
+    threading.Thread(target=continuous_gemini_analysis_and_alerts, daemon=True).start()
 
 
 @app.on_event("shutdown")
@@ -432,6 +513,23 @@ async def broadcast_metrics():
         metrics_connections.remove(conn)
 
 
+async def broadcast_alert_update():
+    """Broadcast alert updates to all connected websockets"""
+    disconnected = []
+    alerts = alert_manager.get_alerts_for_dashboard()
+
+    for connection in alert_connections:
+        try:
+            await connection.send_json({"type": "alerts", "data": alerts})
+        except:
+            disconnected.append(connection)
+
+    for conn in disconnected:
+        alert_connections.remove(conn)
+
+
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time updates"""
@@ -489,6 +587,24 @@ async def websocket_metrics(websocket: WebSocket):
     except WebSocketDisconnect:
         if websocket in metrics_connections:
             metrics_connections.remove(websocket)
+
+
+@app.websocket("/ws/alerts")
+async def websocket_alerts(websocket: WebSocket):
+    """WebSocket endpoint for real-time alerts"""
+    await websocket.accept()
+    alert_connections.append(websocket)
+    
+    try:
+        # Send current alerts on connect
+        alerts = alert_manager.get_alerts_for_dashboard()
+        await websocket.send_json({"type": "alerts", "data": alerts})
+        
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        if websocket in alert_connections:
+            alert_connections.remove(websocket)
 
 
 @app.get("/video_feed")
@@ -571,6 +687,46 @@ async def get_overlay_settings():
 async def get_recent_activity(limit: int = 50):
     """Get recent activity logs"""
     return activity_logger.get_recent_activities(limit)
+
+
+@app.get("/api/alerts")
+async def get_alerts(recipient: str = None):
+    """Get active alerts with optional recipient filter"""
+    from Agent.alert_types import AlertRecipient
+    
+    recipient_filter = None
+    if recipient:
+        try:
+            recipient_filter = AlertRecipient(recipient.lower())
+        except ValueError:
+            pass
+    
+    alerts = alert_manager.get_active_alerts(recipient_filter=recipient_filter)
+    return [alert.to_dict() for alert in alerts]
+
+
+@app.post("/api/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(alert_id: str):
+    """Acknowledge an alert"""
+    success = alert_manager.acknowledge_alert(alert_id)
+    if success:
+        await broadcast_alert_update()
+    return {"success": success}
+
+
+@app.post("/api/alerts/{alert_id}/dismiss")
+async def dismiss_alert(alert_id: str):
+    """Dismiss an alert"""
+    success = alert_manager.dismiss_alert(alert_id)
+    if success:
+        await broadcast_alert_update()
+    return {"success": success}
+
+
+@app.get("/api/alerts/statistics")
+async def get_alert_statistics():
+    """Get alert statistics"""
+    return alert_manager.get_alert_statistics()
 
 
 @app.get("/", response_class=HTMLResponse)
