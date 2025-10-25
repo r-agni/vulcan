@@ -1,8 +1,7 @@
 fastapi==0.104.1
 uvicorn==0.24.0
 opencv-python==4.8.1.78
-torch
-torchvision
+
 facenet-pytorch
 pillow==10.1.0
 google-genai==0.2.0

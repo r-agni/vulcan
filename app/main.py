@@ -13,6 +13,7 @@ import threading
 from database import init_db, get_db, Person, DetectionEvent, BehaviorAnalysis
 from camera_manager import CameraManager
 from face_detector import FaceDetector
+from person_detector import PersonDetector
 from gemini_analyzer import GeminiAnalyzer
 from dotenv import load_dotenv
 
@@ -24,6 +25,7 @@ app = FastAPI(title="Video AI Surveillance System")
 # Initialize components
 camera = CameraManager(camera_source=int(os.getenv("CAMERA_SOURCE", 0)))
 face_detector = FaceDetector(tolerance=0.6)
+person_detector = PersonDetector(confidence_threshold=0.7)
 gemini_analyzer = GeminiAnalyzer(api_key=os.getenv("GEMINI_API_KEY"))
 
 # WebSocket connections
@@ -64,80 +66,93 @@ async def shutdown_event():
 
 
 def process_frame(frame):
-    """Process each camera frame for face detection"""
+    """Process each camera frame with hybrid person+face detection"""
     global current_detected_person, analysis_in_progress
 
-    # Detect faces
-    detected_faces = face_detector.detect_faces(frame)
+    # Step 1: Detect persons for coarse segmentation
+    person_detections = person_detector.detect_persons(frame)
 
-    if len(detected_faces) > 0:
-        for face_encoding, face_location in detected_faces:
+    db = next(get_db())
+
+    # Step 2: For each detected person, check for visible faces
+    for person_bbox, person_confidence in person_detections:
+        # Extract person ROI with padding for face detection
+        roi_frame, offset_xy = person_detector.extract_person_roi(frame, person_bbox, padding=10)
+
+        # Detect faces within the person ROI
+        detected_faces_in_roi = face_detector.detect_faces_in_roi(frame, person_bbox, offset_xy)
+
+        # Check if any faces are sufficiently visible
+        visible_faces = []
+        for face_encoding, face_location in detected_faces_in_roi:
+            if person_detector.is_face_visible(person_bbox, face_location, face_confidence):
+                visible_faces.append((face_encoding, face_location))
+
+        face_recognized = False
+        person_data = None
+
+        # Step 3: Try to recognize face if visible
+        if len(visible_faces) > 0:
+            # Use the most confident face detection
+            best_face_encoding, best_face_location = visible_faces[0]
+
             # Try to recognize face
-            person_id = face_detector.recognize_face(face_encoding)
-
-            db = next(get_db())
+            person_id = face_detector.recognize_face(best_face_encoding)
 
             if person_id:
                 # Known person detected
                 person = db.query(Person).filter(Person.id == person_id).first()
                 face_detector.update_person_visit(db, person_id)
-
-                # Log detection event
-                frame_path = camera.save_frame(frame)
-                event = face_detector.log_detection_event(
-                    db, person_id, 0.95, frame_path
-                )
-
-                # Send to dashboard
-                current_detected_person = {
-                    "id": person.id,
-                    "name": person.name,
-                    "visit_count": person.visit_count,
-                    "first_seen": person.first_seen.isoformat(),
-                    "last_seen": person.last_seen.isoformat(),
-                    "thumbnail": person.thumbnail_path,
-                    "is_new": False
-                }
-
-                # Trigger behavior analysis in background
-                if not analysis_in_progress:
-                    threading.Thread(
-                        target=trigger_behavior_analysis,
-                        args=(person_id, event.id),
-                        daemon=True
-                    ).start()
-
+                face_recognized = True
             else:
                 # Unknown person - add to database
                 person = face_detector.add_person_to_db(
-                    db, face_encoding, frame, face_location
+                    db, best_face_encoding, frame, best_face_location
                 )
+                face_recognized = True
 
-                # Log detection event
-                frame_path = camera.save_frame(frame)
-                event = face_detector.log_detection_event(
-                    db, person.id, 0.90, frame_path
-                )
+            person_data = {
+                "id": person.id,
+                "name": person.name,
+                "visit_count": person.visit_count,
+                "first_seen": person.first_seen.isoformat(),
+                "last_seen": person.last_seen.isoformat(),
+                "thumbnail": person.thumbnail_path,
+                "is_new": not person_id,
+                "face_visible": True,
+                "person_confidence": person_confidence
+            }
+        else:
+            # Person detected but no face visible - still track anonymously
+            # Create or retrieve anonymous person record based on position/size heuristic
+            # For now, we'll just log the detection without face recognition
+            person_data = {
+                "name": "Person (Face Not Visible)",
+                "is_new": True,
+                "face_visible": False,
+                "person_confidence": person_confidence,
+                "bbox": person_bbox
+            }
 
-                current_detected_person = {
-                    "id": person.id,
-                    "name": person.name,
-                    "visit_count": 1,
-                    "first_seen": person.first_seen.isoformat(),
-                    "last_seen": person.last_seen.isoformat(),
-                    "thumbnail": person.thumbnail_path,
-                    "is_new": True
-                }
+        # Step 4: Log detection and trigger analysis if face was recognized
+        if face_recognized and person_data and person_data.get("id"):
+            # Log detection event
+            frame_path = camera.save_frame(frame)
+            event = face_detector.log_detection_event(
+                db, person_data["id"], 0.95, frame_path
+            )
 
-                # Trigger behavior analysis
-                if not analysis_in_progress:
-                    threading.Thread(
-                        target=trigger_behavior_analysis,
-                        args=(person.id, event.id),
-                        daemon=True
-                    ).start()
+            current_detected_person = person_data
 
-            # Broadcast to all connected clients
+            # Trigger behavior analysis
+            if not analysis_in_progress:
+                threading.Thread(
+                    target=trigger_behavior_analysis,
+                    args=(person_data["id"], event.id),
+                    daemon=True
+                ).start()
+
+            # Broadcast to dashboard
             asyncio.run(broadcast_detection(current_detected_person))
 
 

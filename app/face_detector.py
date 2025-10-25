@@ -104,6 +104,124 @@ class FaceDetector:
 
         return results
 
+    def detect_faces_in_roi(self, frame: np.ndarray, roi_bbox: Tuple[int, int, int, int],
+                           offset_xy: Tuple[int, int] = (0, 0)) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
+        """
+        Detect faces in a specific region of interest (ROI) using facenet-pytorch and MTCNN
+        Useful for hybrid detection where we only want faces within detected person regions
+
+        Args:
+            frame: Full frame image
+            roi_bbox: Region of interest bbox (left, top, right, bottom)
+            offset_xy: Offset to add to face locations to convert back to full frame coordinates
+
+        Returns: List of (face_encoding, face_location) tuples with global coordinates
+        """
+        results = []
+
+        try:
+            # Extract ROI from frame
+            roi_left, roi_top, roi_right, roi_bottom = roi_bbox
+            roi_frame = frame[roi_top:roi_bottom, roi_left:roi_right]
+
+            if roi_frame.size == 0:
+                return results
+
+            # Convert BGR to RGB and create PIL Image for MTCNN
+            rgb_roi = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2RGB)
+            pil_roi = Image.fromarray(rgb_roi)
+
+            # Detect faces in ROI using MTCNN
+            boxes, probs = self.mtcnn.detect(pil_roi)
+
+            if boxes is not None and len(boxes) > 0:
+                # Get aligned faces (automatically preprocessed)
+                faces = self.mtcnn(pil_roi)
+
+                if faces is not None and len(faces) > 0:
+                    # Generate embeddings for all faces at once
+                    embeddings = self.model(faces).detach().cpu().numpy()
+
+                    for i, box in enumerate(boxes):
+                        x1, y1, x2, y2 = box  # MTCNN returns left, top, right, bottom (relative to ROI)
+
+                        # Skip very small faces (likely false positives)
+                        width, height = x2 - x1, y2 - y1
+                        if width < 30 or height < 30:  # Smaller threshold for ROI detection
+                            continue
+
+                        # Convert ROI coordinates back to full frame coordinates
+                        global_x1 = x1 + roi_left + offset_xy[0]
+                        global_y1 = y1 + roi_top + offset_xy[1]
+                        global_x2 = x2 + roi_left + offset_xy[0]
+                        global_y2 = y2 + roi_top + offset_xy[1]
+
+                        # Convert to (top, right, bottom, left) format to match original API
+                        face_location = (int(global_y1), int(global_x2), int(global_y2), int(global_x1))
+
+                        # Get corresponding embedding
+                        face_encoding = embeddings[i]
+
+                        results.append((face_encoding, face_location))
+
+        except Exception as e:
+            print(f"Error detecting faces in ROI: {e}")
+            # Fallback to OpenCV Haar Cascade in ROI
+            results = self._detect_faces_opencv_in_roi(frame, roi_bbox, offset_xy)
+
+        return results
+
+    def _detect_faces_opencv_in_roi(self, frame: np.ndarray, roi_bbox: Tuple[int, int, int, int],
+                                   offset_xy: Tuple[int, int] = (0, 0)) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
+        """
+        Fallback face detection in ROI using OpenCV Haar Cascade
+        """
+        results = []
+
+        try:
+            # Extract ROI
+            roi_left, roi_top, roi_right, roi_bottom = roi_bbox
+            roi_frame = frame[roi_top:roi_bottom, roi_left:roi_right]
+
+            if roi_frame.size == 0:
+                return results
+
+            # Convert to grayscale and detect faces
+            gray_roi = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2GRAY)
+            faces_roi = self.face_cascade.detectMultiScale(gray_roi, 1.1, 4)  # More sensitive for ROI
+
+            for (x, y, w, h) in faces_roi:
+                try:
+                    # Extract face region and convert to PIL for facenet-pytorch
+                    face_img = roi_frame[y:y+h, x:x+w]
+                    pil_face = Image.fromarray(cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB))
+
+                    # Get aligned face using MTCNN (single face)
+                    mtcnn_single = MTCNN(keep_all=False, device=self.device)
+                    aligned_face = mtcnn_single(pil_face)
+
+                    if aligned_face is not None:
+                        # Generate embedding
+                        embedding = self.model(aligned_face.unsqueeze(0)).detach().cpu().numpy().flatten()
+
+                        # Convert coordinates back to full frame
+                        global_x = x + roi_left + offset_xy[0]
+                        global_y = y + roi_top + offset_xy[1]
+
+                        # Convert to (top, right, bottom, left) format
+                        face_location = (global_y, global_x + w, global_y + h, global_x)
+
+                        results.append((embedding, face_location))
+
+                except Exception as e:
+                    print(f"Error generating face embedding in ROI: {e}")
+                    continue
+
+        except Exception as e:
+            print(f"Error in OpenCV ROI face detection: {e}")
+
+        return results
+
     def _detect_faces_opencv(self, frame: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
         """
         Fallback face detection using OpenCV Haar Cascade + facenet-pytorch embeddings

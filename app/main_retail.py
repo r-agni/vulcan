@@ -22,6 +22,7 @@ from database import (
 )
 from camera_manager import CameraManager
 from face_detector import FaceDetector
+from person_detector import PersonDetector
 from gemini_analyzer import GeminiAnalyzer
 from retail_analytics import (
     TrajectoryTracker, DwellTimeCalculator, ZoneDetector,
@@ -42,6 +43,7 @@ app.include_router(zone_router)
 # Initialize core components
 camera = CameraManager(camera_source=int(os.getenv("CAMERA_SOURCE", 0)))
 face_detector = FaceDetector(tolerance=0.6)
+person_detector = PersonDetector(confidence_threshold=0.7)
 gemini_analyzer = GeminiAnalyzer(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Initialize retail analytics modules
@@ -106,7 +108,7 @@ async def shutdown_event():
 
 def process_frame_with_analytics(frame):
     """
-    Process each camera frame with comprehensive retail analytics
+    Process each camera frame with hybrid person+face detection and retail analytics
     """
     global current_detected_persons, current_analytics_data
     global last_occupancy_log_time, last_heatmap_save_time
@@ -114,68 +116,141 @@ def process_frame_with_analytics(frame):
     timestamp = datetime.utcnow()
     frame_height, frame_width = frame.shape[:2]
 
-    # Step 1: Detect faces
-    detected_faces = face_detector.detect_faces(frame)
+    # Step 1: Detect persons for coarse segmentation
+    person_detections = person_detector.detect_persons(frame)
 
     current_detections = {}
     detection_positions = {}  # {person_id: (norm_x, norm_y)}
+    face_recognized_persons = set()  # Track which persons have recognized faces
 
-    for face_encoding, face_location in detected_faces:
-        # Recognize or add person
-        person_id = face_detector.recognize_face(face_encoding)
+    db = next(get_db())
 
-        db = next(get_db())
+    # Step 2: For each detected person, check for visible faces and analytics
+    person_id_counter = 0  # For anonymous persons
 
-        if not person_id:
-            # New person
-            person = face_detector.add_person_to_db(
-                db, face_encoding, frame, face_location
-            )
-            person_id = person.id
+    for person_bbox, person_confidence in person_detections:
+        person_left, person_top, person_right, person_bottom = person_bbox
+
+        # Calculate person centroid for trajectory tracking
+        person_centroid_x = (person_left + person_right) / 2
+        person_centroid_y = (person_top + person_bottom) / 2
+        norm_x = person_centroid_x / frame_width
+        norm_y = person_centroid_y / frame_height
+
+        # Try face detection within person ROI
+        roi_frame, offset_xy = person_detector.extract_person_roi(frame, person_bbox, padding=5)
+        detected_faces_in_roi = face_detector.detect_faces_in_roi(frame, person_bbox, offset_xy)
+
+        # Check which faces are sufficiently visible
+        visible_faces = []
+        for face_encoding, face_location in detected_faces_in_roi:
+            if person_detector.is_face_visible(person_bbox, face_location, face_confidence):
+                visible_faces.append((face_encoding, face_location))
+
+        person_id = None
+        person_name = f"Person_{person_id_counter}"
+        face_visible = len(visible_faces) > 0
+        is_new_person = False
+
+        # Step 3: Try to recognize face if visible
+        if face_visible:
+            # Use the most confident face detection
+            best_face_encoding, best_face_location = visible_faces[0]
+
+            # Try to recognize face
+            recognized_person_id = face_detector.recognize_face(best_face_encoding)
+
+            if recognized_person_id:
+                # Known person
+                person = db.query(Person).filter(Person.id == recognized_person_id).first()
+                if person:
+                    face_detector.update_person_visit(db, recognized_person_id)
+                    person_id = recognized_person_id
+                    person_name = person.name
+
+                    # Log detection event
+                    frame_path = camera.save_frame(frame)
+                    event = face_detector.log_detection_event(db, person_id, 0.95, frame_path)
+                    face_recognized_persons.add(person_id)
+            else:
+                # New person - add to database
+                person = face_detector.add_person_to_db(
+                    db, best_face_encoding, frame, best_face_location
+                )
+                person_id = person.id
+                person_name = person.name
+                is_new_person = True
+
+                # Log detection event
+                frame_path = camera.save_frame(frame)
+                event = face_detector.log_detection_event(db, person_id, 0.90, frame_path)
+                face_recognized_persons.add(person_id)
         else:
-            # Update existing person
-            face_detector.update_person_visit(db, person_id)
+            # No face visible - create/use anonymous tracking
+            # For trajectory purposes, we'll use a temporary ID based on position
+            # This person will be tracked but not added to the database permanently
+            person_id = f"anon_{person_id_counter}"
+            person_name = "Anonymous"
 
-        # Log detection event
-        frame_path = camera.save_frame(frame)
-        event = face_detector.log_detection_event(db, person_id, 0.95, frame_path)
+        # Step 4: Track trajectory using person centroid (regardless of face visibility)
+        if face_visible:
+            # Use face location for more precise trajectory when face is visible
+            face_top, face_right, face_bottom, face_left = best_face_location
+            face_centroid_x = (face_left + face_right) / 2
+            face_centroid_y = (face_top + face_bottom) / 2
+            trajectory_norm_x, trajectory_norm_y = trajectory_tracker.update_position(
+                person_id, best_face_location, timestamp, frame_width, frame_height
+            )
+        else:
+            # Use person bbox center for trajectory tracking
+            # Create a pseudo-bbox around centroid for trajectory tracking
+            pseudo_bbox = (
+                int(person_centroid_y),  # top
+                int(person_centroid_x + 10),  # right (small offset)
+                int(person_centroid_y + 10),  # bottom (small offset)
+                int(person_centroid_x)  # left
+            )
+            trajectory_norm_x, trajectory_norm_y = trajectory_tracker.update_position(
+                person_id, pseudo_bbox, timestamp, frame_width, frame_height
+            )
 
-        # Track trajectory
-        norm_x, norm_y = trajectory_tracker.update_position(
-            person_id, face_location, timestamp, frame_width, frame_height
-        )
-        detection_positions[person_id] = (norm_x, norm_y)
+        detection_positions[person_id] = (trajectory_norm_x, trajectory_norm_y)
 
-        # Detect current zone
-        current_zone_id = zone_detector.find_zone((norm_x, norm_y))
+        # Step 5: Zone detection and analytics
+        current_zone_id = zone_detector.find_zone((trajectory_norm_x, trajectory_norm_y))
 
         # Calculate dwell time
         dwell_time = dwell_calculator.update(
-            person_id, current_zone_id, (norm_x, norm_y), timestamp
+            person_id, current_zone_id, (trajectory_norm_x, trajectory_norm_y), timestamp
         )
 
         # Check line crossing
         crossing_event = line_crossing_detector.check_crossing(
-            person_id, (norm_x, norm_y), timestamp
+            person_id, (trajectory_norm_x, trajectory_norm_y), timestamp
         )
         if crossing_event:
-            line_crossing_detector.log_crossing(db, person_id, crossing_event, timestamp)
+            # Only log crossings for recognized persons
+            if person_id in face_recognized_persons:
+                line_crossing_detector.log_crossing(db, int(person_id), crossing_event, timestamp)
 
         # Add to heatmap
-        heatmap_generator.add_detection((norm_x, norm_y), weight=1.0)
+        heatmap_generator.add_detection((trajectory_norm_x, trajectory_norm_y), weight=1.0)
 
         # Store current detection
-        person = db.query(Person).filter(Person.id == person_id).first()
         current_detections[person_id] = {
-            'id': person_id,
-            'name': person.name,
-            'bbox': face_location,
+            'id': person_id if isinstance(person_id, int) else None,
+            'name': person_name,
+            'bbox': person_bbox,  # Use person bbox, not face bbox
             'zone_id': current_zone_id,
             'dwell_time': dwell_time,
-            'position': (norm_x, norm_y)
+            'position': (trajectory_norm_x, trajectory_norm_y),
+            'face_visible': face_visible,
+            'person_confidence': person_confidence
         }
 
-    # Step 2: Update occupancy
+        person_id_counter += 1
+
+    # Step 6: Update occupancy
     occupancy_counts = occupancy_counter.update(detection_positions, timestamp)
 
     # Log occupancy every 5 minutes
@@ -237,9 +312,10 @@ def process_frame_with_analytics(frame):
     # Broadcast analytics to connected clients
     asyncio.run(broadcast_analytics(current_analytics_data))
 
-    # Trigger analysis for new detections
+    # Trigger analysis for new face-recognized detections only
     for person_id, data in current_detections.items():
-        if person_id not in current_detected_persons or data.get('is_new'):
+        if (isinstance(person_id, int) and  # Only for actual person IDs, not anonymous
+            (person_id not in current_detected_persons or data.get('is_new'))):
             if not analysis_in_progress:
                 threading.Thread(
                     target=trigger_retail_analysis,
