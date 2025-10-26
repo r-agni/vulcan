@@ -13,9 +13,9 @@ from sqlalchemy.orm import Session
 import uuid
 import json
 
-from database import (
+from app.core.database import (
     PersonTrajectory, DwellTimeRecord, Zone, VirtualLine,
-    LineCrossingEvent, OccupancyLog, QueueMetrics, HeatmapData, ProductInteraction
+    LineCrossingEvent, OccupancyLog, QueueMetrics, HeatmapData, ProductInteraction, GazeEvent
 )
 
 
@@ -522,6 +522,172 @@ class HeatmapGenerator:
     def reset(self):
         """Reset heatmap grid"""
         self.heat_grid = np.zeros((self.grid_height, self.grid_width), dtype=np.float32)
+
+
+class InteractionTracker:
+    """
+    Track product interactions with engagement scoring
+    Integrates with hand detection and zone detection
+    """
+
+    def __init__(self):
+        # Active interactions: (tracking_id, zone_id) -> interaction_data
+        self.active_interactions: Dict[Tuple[str, int], Dict] = {}
+        self.session_ids: Dict[str, str] = {}  # {tracking_id: session_uuid}
+        self.tracking_to_person: Dict[str, Optional[int]] = {}
+
+    def start_interaction(
+        self,
+        tracking_id: str,
+        person_id: Optional[int],
+        zone_id: int,
+        interaction_type: str,
+        hand_position: Tuple[float, float],
+        gesture_type: str,
+        timestamp: datetime
+    ):
+        """Start tracking a new interaction"""
+        # Get or create session ID
+        if tracking_id not in self.session_ids:
+            self.session_ids[tracking_id] = str(uuid.uuid4())
+
+        # Update person mapping
+        if person_id is not None:
+            self.tracking_to_person[tracking_id] = person_id
+
+        key = (tracking_id, zone_id)
+        self.active_interactions[key] = {
+            'person_id': person_id,
+            'zone_id': zone_id,
+            'interaction_type': interaction_type,
+            'hand_position': hand_position,
+            'gesture_type': gesture_type,
+            'start_time': timestamp,
+            'last_update': timestamp,
+            'session_id': self.session_ids[tracking_id]
+        }
+
+    def update_interaction(
+        self,
+        tracking_id: str,
+        zone_id: int,
+        interaction_type: str,
+        hand_position: Tuple[float, float],
+        gesture_type: str,
+        timestamp: datetime
+    ) -> Optional[float]:
+        """Update existing interaction and return duration"""
+        key = (tracking_id, zone_id)
+
+        if key not in self.active_interactions:
+            return None
+
+        interaction = self.active_interactions[key]
+        interaction['interaction_type'] = interaction_type
+        interaction['hand_position'] = hand_position
+        interaction['gesture_type'] = gesture_type
+        interaction['last_update'] = timestamp
+
+        duration = (timestamp - interaction['start_time']).total_seconds()
+        return duration
+
+    def end_interaction(
+        self,
+        db: Session,
+        tracking_id: str,
+        zone_id: int,
+        timestamp: datetime
+    ):
+        """End interaction and save to database"""
+        key = (tracking_id, zone_id)
+
+        if key not in self.active_interactions:
+            return
+
+        interaction = self.active_interactions[key]
+        duration = (timestamp - interaction['start_time']).total_seconds()
+
+        person_id = interaction.get('person_id') or self.tracking_to_person.get(tracking_id)
+
+        # Calculate engagement score
+        engagement_score = self._calculate_engagement_score(
+            interaction['interaction_type'],
+            duration,
+            interaction['gesture_type']
+        )
+
+        # Save to database
+        db_interaction = ProductInteraction(
+            person_id=person_id,
+            zone_id=zone_id,
+            timestamp=interaction['start_time'],
+            interaction_type=interaction['interaction_type'],
+            duration_seconds=duration,
+            engagement_score=engagement_score,
+            hand_position={
+                'x': interaction['hand_position'][0],
+                'y': interaction['hand_position'][1]
+            },
+            gesture_type=interaction['gesture_type']
+        )
+
+        db.add(db_interaction)
+        db.commit()
+
+        # Remove from active tracking
+        del self.active_interactions[key]
+
+    def _calculate_engagement_score(
+        self,
+        interaction_type: str,
+        duration: float,
+        gesture_type: str
+    ) -> float:
+        """Calculate engagement score (0-1) based on interaction characteristics"""
+        base_scores = {
+            'touching': 0.3,
+            'reaching': 0.4,
+            'picking_up': 0.7,
+            'examining': 0.9,
+            'putting_back': 0.5
+        }
+
+        score = base_scores.get(interaction_type, 0.5)
+
+        # Boost for specific gestures
+        if gesture_type == 'grabbing':
+            score += 0.1
+        elif gesture_type == 'pointing':
+            score += 0.05
+
+        # Boost for longer duration (up to 30 seconds)
+        score += min(0.2, duration / 150.0)
+
+        return min(1.0, score)
+
+    def get_active_interactions(self) -> List[Dict]:
+        """Get all active interactions"""
+        return [
+            {
+                'tracking_id': key[0],
+                'zone_id': key[1],
+                **data
+            }
+            for key, data in self.active_interactions.items()
+        ]
+
+    def cleanup_old_interactions(self, max_age_seconds: float = 10.0):
+        """Remove stale interactions"""
+        current_time = datetime.now(UTC)
+        keys_to_remove = []
+
+        for key, interaction in self.active_interactions.items():
+            age = (current_time - interaction['last_update']).total_seconds()
+            if age > max_age_seconds:
+                keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            del self.active_interactions[key]
 
 
 class QueueDetector:

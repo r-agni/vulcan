@@ -10,26 +10,24 @@ from typing import List, Optional
 from datetime import datetime, UTC
 import threading
 
-from camera_manager import CameraManager
-from person_detector import PersonDetector
-from gemini_analyzer import GeminiAnalyzer
-from activity_logger import activity_logger, analysis_streamer, log_activity, stream_analysis
-from video_overlay import VideoOverlayRenderer
-from retail_analytics import (
+from app.video import CameraManager, VideoOverlayRenderer
+from app.detection import PersonDetector, InteractionDetector, GazeDetector
+from app.analytics import GeminiAnalyzer
+from app.analytics.retail_analytics import (
     TrajectoryTracker, DwellTimeCalculator, ZoneDetector,
-    OccupancyCounter, LineCrossingDetector, HeatmapGenerator, QueueDetector
+    OccupancyCounter, LineCrossingDetector, HeatmapGenerator, QueueDetector, InteractionTracker
 )
+from app.utils import activity_logger, analysis_streamer, log_activity, stream_analysis
 from dotenv import load_dotenv
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from Agent import AlertGenerator, AlertManager
 
 # Import RAG system
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rag.rag_api import create_rag_router
 
 # Import Staff Location Tracker
-from staff_location_tracker import router as staff_location_router
+from app.tracking.staff_location_tracker import router as staff_location_router
 
 load_dotenv()
 
@@ -57,6 +55,19 @@ occupancy_counter = OccupancyCounter()
 line_crossing_detector = LineCrossingDetector()
 heatmap_generator = HeatmapGenerator(width=1280, height=720, resolution=20)
 queue_detector = QueueDetector()
+interaction_tracker = InteractionTracker()
+
+# Initialize Phase 2 & 3 components
+interaction_detector = InteractionDetector(
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5,
+    proximity_threshold=0.15
+)
+gaze_detector = GazeDetector(
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5,
+    fixation_threshold_seconds=0.5
+)
 
 # Initialize Alert System
 alert_generator = AlertGenerator(api_key=os.getenv("GEMINI_API_KEY"))
@@ -352,6 +363,10 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown"""
     camera.stop()
+    # Release MediaPipe resources
+    interaction_detector.release()
+    gaze_detector.release()
+    log_activity("🛑 System shutdown complete", "system")
 
 
 def process_frame(frame):
@@ -422,6 +437,78 @@ def process_frame(frame):
 
             # Check line crossings
             line_crossing_detector.check_crossing(person_id, (center_x, center_y), datetime.now(UTC))
+
+            # === PHASE 2: Hand & Interaction Detection ===
+            if zones_data and len(zones_data) > 0:
+                interactions = interaction_detector.update(
+                    frame=frame,
+                    tracking_id=str(person_id),
+                    person_id=person_id,
+                    person_bbox=person_bbox,
+                    zones=zones_data,
+                    timestamp=datetime.now(UTC)
+                )
+
+                # Update interaction tracker
+                for interaction in interactions:
+                    if interaction.duration_seconds == 0.0:
+                        # New interaction
+                        interaction_tracker.start_interaction(
+                            tracking_id=str(person_id),
+                            person_id=person_id,
+                            zone_id=interaction.zone_id,
+                            interaction_type=interaction.interaction_type,
+                            hand_position=interaction.hand_position,
+                            gesture_type=interaction.gesture_type,
+                            timestamp=interaction.timestamp
+                        )
+                    else:
+                        # Update existing interaction
+                        interaction_tracker.update_interaction(
+                            tracking_id=str(person_id),
+                            zone_id=interaction.zone_id,
+                            interaction_type=interaction.interaction_type,
+                            hand_position=interaction.hand_position,
+                            gesture_type=interaction.gesture_type,
+                            timestamp=datetime.now(UTC)
+                        )
+
+            # === PHASE 3: Gaze Detection ===
+            gaze_data = gaze_detector.detect_face_and_gaze(
+                frame=frame,
+                person_bbox=person_bbox
+            )
+
+            if gaze_data:
+                # Update gaze fixation tracking
+                fixation = gaze_detector.update_fixation(
+                    tracking_id=str(person_id),
+                    person_id=person_id,
+                    gaze_data=gaze_data,
+                    zones=zones_data,
+                    timestamp=datetime.now(UTC)
+                )
+
+                # Log significant fixations (optional - can be periodic)
+                # Uncomment to log every fixation to DB
+                # if fixation:
+                #     from database import SessionLocal
+                #     db = SessionLocal()
+                #     try:
+                #         gaze_detector.log_gaze_event_to_db(
+                #             db=db,
+                #             tracking_id=str(person_id),
+                #             person_id=person_id,
+                #             gaze_data=gaze_data,
+                #             fixation=fixation
+                #         )
+                #     finally:
+                #         db.close()
+
+        # Cleanup old interactions and fixations
+        interaction_detector.cleanup_old_interactions(max_age_seconds=5.0)
+        gaze_detector.cleanup_old_fixations(max_age_seconds=5.0)
+        interaction_tracker.cleanup_old_interactions(max_age_seconds=10.0)
 
         # Update occupancy counter with all positions
         zone_occupancies = occupancy_counter.update(person_positions, datetime.now(UTC))

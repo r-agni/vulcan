@@ -6,7 +6,7 @@ import re
 from typing import Dict, Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session
-from database import BehaviorAnalysis, SceneAnalysis, EventLog, InteractionLog
+from app.core.database import BehaviorAnalysis, SceneAnalysis, EventLog, InteractionLog
 import cv2
 
 

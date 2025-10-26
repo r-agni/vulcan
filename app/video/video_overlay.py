@@ -23,7 +23,9 @@ class VideoOverlayRenderer:
             'virtual_lines': True,
             'proximity': True,
             'labels': True,
-            'alerts': True
+            'alerts': True,
+            'hand_landmarks': True,  # Phase 2
+            'gaze_rays': True  # Phase 3
         }
 
     def render_frame(
@@ -42,7 +44,9 @@ class VideoOverlayRenderer:
             'virtual_lines': [{'id': 1, 'start': {...}, 'end': {...}, 'counts': {...}}, ...],
             'queues': [{'zone_id': 1, 'length': 5, 'positions': [...]}, ...],
             'heatmap': np.ndarray or None,
-            'alerts': [{'type': 'queue', 'message': '...'}, ...]
+            'alerts': [{'type': 'queue', 'message': '...'}, ...],
+            'hand_landmarks': [{'person_id': 1, 'landmarks': [...], 'gesture': 'grabbing'}, ...],
+            'gaze_data': [{'person_id': 1, 'gaze_direction': (...), 'target': (...), 'confidence': 0.9}, ...]
         }
         """
         overlay = frame.copy()
@@ -63,19 +67,27 @@ class VideoOverlayRenderer:
         if self.overlay_config['trajectories'] and analytics_data.get('trajectories'):
             overlay = self._draw_trajectories(overlay, analytics_data['trajectories'])
 
-        # Layer 5: Bounding Boxes (if enabled)
+        # Layer 5: Hand Landmarks (Phase 2 - if enabled)
+        if self.overlay_config['hand_landmarks'] and analytics_data.get('hand_landmarks'):
+            overlay = self._draw_hand_landmarks(overlay, analytics_data['hand_landmarks'])
+
+        # Layer 6: Gaze Rays (Phase 3 - if enabled)
+        if self.overlay_config['gaze_rays'] and analytics_data.get('gaze_data'):
+            overlay = self._draw_gaze_rays(overlay, analytics_data['gaze_data'])
+
+        # Layer 7: Bounding Boxes (if enabled)
         if self.overlay_config['bounding_boxes'] and analytics_data.get('detections'):
             overlay = self._draw_bounding_boxes(overlay, analytics_data['detections'])
 
-        # Layer 6: Queue Visualization
+        # Layer 8: Queue Visualization
         if analytics_data.get('queues'):
             overlay = self._draw_queues(overlay, analytics_data['queues'])
 
-        # Layer 7: Labels and Metrics (if enabled)
+        # Layer 9: Labels and Metrics (if enabled)
         if self.overlay_config['labels']:
             overlay = self._draw_labels(overlay, analytics_data)
 
-        # Layer 8: Alerts (if enabled)
+        # Layer 10: Alerts (if enabled)
         if self.overlay_config['alerts'] and analytics_data.get('alerts'):
             overlay = self._draw_alerts(overlay, analytics_data['alerts'])
 
@@ -384,6 +396,160 @@ class VideoOverlayRenderer:
             )
 
             y_offset += 40
+
+        return frame
+
+    def _draw_hand_landmarks(self, frame: np.ndarray, hand_data: List[Dict]) -> np.ndarray:
+        """
+        Draw hand landmarks and gestures (Phase 2)
+
+        Args:
+            frame: Input frame
+            hand_data: List of hand detection data
+                [{'person_id': 1, 'landmarks': [(x, y, z), ...], 'gesture': 'grabbing', 'hand_center': (x, y)}, ...]
+        """
+        # Hand landmark connections (MediaPipe Hands connections)
+        HAND_CONNECTIONS = [
+            # Thumb
+            (0, 1), (1, 2), (2, 3), (3, 4),
+            # Index finger
+            (0, 5), (5, 6), (6, 7), (7, 8),
+            # Middle finger
+            (0, 9), (9, 10), (10, 11), (11, 12),
+            # Ring finger
+            (0, 13), (13, 14), (14, 15), (15, 16),
+            # Pinky
+            (0, 17), (17, 18), (18, 19), (19, 20)
+        ]
+
+        for hand_info in hand_data:
+            landmarks = hand_info.get('landmarks', [])
+            gesture = hand_info.get('gesture', 'unknown')
+            hand_center = hand_info.get('hand_center')
+
+            if not landmarks or len(landmarks) < 21:
+                continue
+
+            # Gesture color mapping
+            gesture_colors = {
+                'grabbing': (0, 0, 255),      # Red
+                'pointing': (255, 255, 0),    # Cyan
+                'holding': (0, 255, 255),     # Yellow
+                'open_palm': (0, 255, 0)      # Green
+            }
+            color = gesture_colors.get(gesture, (255, 255, 255))
+
+            # Draw connections
+            for connection in HAND_CONNECTIONS:
+                start_idx, end_idx = connection
+                if start_idx < len(landmarks) and end_idx < len(landmarks):
+                    start_point = landmarks[start_idx]
+                    end_point = landmarks[end_idx]
+
+                    # Convert normalized coordinates to pixel coordinates
+                    start_pixel = (
+                        int(start_point[0] * self.width),
+                        int(start_point[1] * self.height)
+                    )
+                    end_pixel = (
+                        int(end_point[0] * self.width),
+                        int(end_point[1] * self.height)
+                    )
+
+                    cv2.line(frame, start_pixel, end_pixel, color, 2)
+
+            # Draw landmarks
+            for landmark in landmarks:
+                pixel_coord = (
+                    int(landmark[0] * self.width),
+                    int(landmark[1] * self.height)
+                )
+                cv2.circle(frame, pixel_coord, 3, color, -1)
+
+            # Draw gesture label at hand center
+            if hand_center:
+                label_pos = (
+                    int(hand_center[0] * self.width),
+                    int(hand_center[1] * self.height) - 20
+                )
+                cv2.putText(
+                    frame,
+                    gesture.upper(),
+                    label_pos,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    color,
+                    2
+                )
+
+        return frame
+
+    def _draw_gaze_rays(self, frame: np.ndarray, gaze_data: List[Dict]) -> np.ndarray:
+        """
+        Draw gaze direction rays and targets (Phase 3)
+
+        Args:
+            frame: Input frame
+            gaze_data: List of gaze detection data
+                [{'person_id': 1, 'eye_center': (x, y), 'gaze_direction': (pitch, yaw, roll),
+                  'target': (x, y), 'confidence': 0.9, 'is_fixation': True}, ...]
+        """
+        for gaze_info in gaze_data:
+            eye_center = gaze_info.get('eye_center')
+            target = gaze_info.get('target')
+            confidence = gaze_info.get('confidence', 0.5)
+            is_fixation = gaze_info.get('is_fixation', False)
+
+            if not eye_center or not target:
+                continue
+
+            # Convert normalized to pixel coordinates
+            eye_pixel = (
+                int(eye_center[0] * self.width),
+                int(eye_center[1] * self.height)
+            )
+            target_pixel = (
+                int(target[0] * self.width),
+                int(target[1] * self.height)
+            )
+
+            # Color based on fixation and confidence
+            if is_fixation:
+                color = (0, 0, 255)  # Red = fixation
+                thickness = 3
+            else:
+                color = (255, 200, 0)  # Light blue = gaze
+                thickness = 2
+
+            # Draw gaze ray (line from eye to target)
+            cv2.arrowedLine(
+                frame,
+                eye_pixel,
+                target_pixel,
+                color,
+                thickness,
+                tipLength=0.3
+            )
+
+            # Draw target circle
+            target_radius = 15 if is_fixation else 10
+            cv2.circle(frame, target_pixel, target_radius, color, 2)
+
+            # Draw confidence indicator
+            if confidence > 0.7:
+                cv2.circle(frame, eye_pixel, 5, color, -1)
+
+            # Draw fixation label
+            if is_fixation:
+                cv2.putText(
+                    frame,
+                    "FIXATION",
+                    (target_pixel[0] + 20, target_pixel[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    color,
+                    1
+                )
 
         return frame
 

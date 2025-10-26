@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
-from database import get_db, Zone, VirtualLine
+from app.core.database import get_db, Zone, VirtualLine
 
 
 router = APIRouter(prefix="/api/zones", tags=["zones"])

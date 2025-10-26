@@ -8,7 +8,7 @@ from typing import Dict, List
 from datetime import datetime, UTC
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, StaffLocation, StaffMember
+from app.core.database import SessionLocal, StaffLocation, StaffMember
 
 router = APIRouter()
 

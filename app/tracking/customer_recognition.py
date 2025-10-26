@@ -21,7 +21,7 @@ except ImportError:
     print("[Customer Recognition] WARNING: transformers not installed. Customer recognition disabled.")
     print("  Install with: pip install transformers torch")
 
-from database import CustomerProfile, CustomerVisit, AppearanceMatch
+from app.core.database import CustomerProfile, CustomerVisit, AppearanceMatch
 
 
 class CustomerRecognitionAgent:

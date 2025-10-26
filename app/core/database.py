@@ -308,10 +308,16 @@ class ProductInteraction(Base):
     person_id = Column(Integer, nullable=False)
     zone_id = Column(Integer, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
-    interaction_type = Column(String)  # "looked_at", "picked_up", "examined"
+    interaction_type = Column(String)  # "looked_at", "picked_up", "examined", "reaching", "touching", "putting_back"
     duration_seconds = Column(Float, nullable=True)
     proximity_cm = Column(Float, nullable=True)  # Distance to product
     engagement_score = Column(Float, nullable=True)  # 0-1
+
+    # Phase 2: Hand & Pose Detection
+    hand_position = Column(JSON, nullable=True)  # {x, y} normalized coordinates
+    gesture_type = Column(String, nullable=True)  # "pointing", "grabbing", "holding", "open_palm"
+    interaction_confidence = Column(Float, nullable=True)  # Confidence score
+    hand_landmarks = Column(JSON, nullable=True)  # Full hand skeleton data [{x, y, z}, ...]
 
 
 class AlertLog(Base):
@@ -505,6 +511,38 @@ class AppearanceMatch(Base):
     # Decision
     match_accepted = Column(Boolean, default=False)
     match_rejected_reason = Column(String, nullable=True)
+
+
+# ==================== PHASE 3: GAZE DETECTION TABLES ====================
+
+class GazeEvent(Base):
+    """Track gaze detection and attention events"""
+    __tablename__ = "gaze_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    person_id = Column(Integer, nullable=True, index=True)  # Optional - may be unknown
+    body_tracking_id = Column(String, nullable=True, index=True)  # Body tracking ID
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Gaze target
+    zone_id = Column(Integer, nullable=True)  # Target zone
+    target_type = Column(String, nullable=False)  # "zone", "product", "person", "unknown"
+    target_position = Column(JSON, nullable=True)  # {x, y} estimated target location
+
+    # Gaze direction
+    gaze_direction = Column(JSON, nullable=False)  # {pitch, yaw, roll} in degrees
+    head_pose = Column(JSON, nullable=True)  # {pitch, yaw, roll} head orientation
+
+    # Attention metrics
+    fixation_duration_seconds = Column(Float, default=0.0)
+    confidence_score = Column(Float)  # Detection confidence
+
+    # Eye landmarks (optional detailed data)
+    left_eye_landmarks = Column(JSON, nullable=True)
+    right_eye_landmarks = Column(JSON, nullable=True)
+
+    # Status
+    is_fixation = Column(Boolean, default=False)  # True if fixation (sustained gaze)
 
 
 def init_db():
