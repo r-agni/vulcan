@@ -29,7 +29,11 @@
       "Bash(set PYTHONPATH=%CD%)",
       "Bash(pip install:*)",
       "Bash(pip uninstall:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(uvicorn:*)",
+      "Bash(findstr:*)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []

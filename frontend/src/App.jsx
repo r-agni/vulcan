@@ -2,14 +2,23 @@ import { useEffect, useState } from 'react';
 import Header from './components/Header/Header';
 import StatusIndicator from './components/StatusIndicator/StatusIndicator';
 import VideoSection from './components/VideoSection/VideoSection';
-import ContentPanels from './components/ContentPanels/ContentPanels';
 import AlertBanner from './components/AlertBanner/AlertBanner';
 import CustomerList from './components/CustomerList/CustomerList';
 import StaffDashboard from './components/StaffDashboard/StaffDashboard';
 import OverlayControls from './components/OverlayControls/OverlayControls';
 import TimelineViewer from './components/TimelineViewer/TimelineViewer';
+import ThreeColumnLayout from './components/Layout/ThreeColumnLayout';
+import RightPanel from './components/Layout/RightPanel';
+import ActivityFeed from './components/Dashboard/ActivityFeed';
+import StatsPanel from './components/Dashboard/StatsPanel';
+import QuickActions from './components/Dashboard/QuickActions';
+import ChatPanel from './components/ChatPanel/ChatPanel';
 import useActivity from './hooks/useActivity';
 import useMetrics from './hooks/useMetrics';
+import useInventory from './hooks/useInventory';
+import useCustomers from './hooks/useCustomers';
+import useAnalysis from './hooks/useAnalysis';
+import useDashboardStore from './store/dashboardStore';
 import styles from './App.module.css';
 
 function App() {
@@ -19,6 +28,9 @@ function App() {
   // Initialize WebSocket connections
   useActivity();
   useMetrics();
+  useInventory();
+  useCustomers();
+  useAnalysis();
 
   useEffect(() => {
     // Fade in animation
@@ -30,31 +42,73 @@ function App() {
   }, []);
 
   const renderContent = () => {
+    const { analysisText } = useDashboardStore();
+
     switch (activeView) {
       case 'dashboard':
         return (
-          <div className={styles.mainContent}>
-            <VideoSection />
-            <ContentPanels />
-          </div>
+          <ThreeColumnLayout
+            left={<ActivityFeed />}
+            center={
+              <div>
+                <VideoSection />
+                <div style={{ padding: '20px' }}>
+                  <h2 style={{
+                    fontFamily: "'Playfair Display', serif",
+                    fontSize: '20px',
+                    color: '#ffffff',
+                    marginBottom: '16px',
+                    paddingBottom: '12px',
+                    borderBottom: '1px solid rgba(255,255,255,0.1)'
+                  }}>
+                    AI Analysis
+                  </h2>
+                  <p style={{
+                    fontFamily: "'Cormorant Garamond', serif",
+                    fontSize: '15px',
+                    lineHeight: '1.6',
+                    color: '#ffffff',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {analysisText || 'Waiting for analysis...'}
+                  </p>
+                </div>
+              </div>
+            }
+            right={
+              <RightPanel
+                tabs={[
+                  { label: 'Stats', content: <StatsPanel /> },
+                  { label: 'Chat', content: <ChatPanel /> },
+                  { label: 'Actions', content: <QuickActions /> }
+                ]}
+              />
+            }
+          />
         );
       case 'customers':
         return (
-          <div className={styles.fullWidthContent}>
-            <CustomerList />
-          </div>
+          <ThreeColumnLayout
+            left={<ActivityFeed />}
+            center={<CustomerList />}
+            right={<div style={{ padding: '20px', color: '#ffffff', fontFamily: "'Cormorant Garamond', serif" }}>Select a customer to view details</div>}
+          />
         );
       case 'staff':
         return (
-          <div className={styles.fullWidthContent}>
-            <StaffDashboard />
-          </div>
+          <ThreeColumnLayout
+            left={<ActivityFeed />}
+            center={<StaffDashboard />}
+            hideRight={true}
+          />
         );
       case 'settings':
         return (
-          <div className={styles.fullWidthContent}>
-            <OverlayControls />
-          </div>
+          <ThreeColumnLayout
+            left={<ActivityFeed />}
+            center={<OverlayControls />}
+            hideRight={true}
+          />
         );
       default:
         return null;

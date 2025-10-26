@@ -1,0 +1,92 @@
+.statsPanel {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sectionTitle {
+  font-family: 'Playfair Display', serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.statCard {
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 16px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.statValue {
+  font-family: 'Playfair Display', serif;
+  font-size: 32px;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.statLabel {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.productList {
+  margin-top: 8px;
+}
+
+.subTitle {
+  font-family: 'Playfair Display', serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 12px 0;
+}
+
+.productItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.productItem:last-child {
+  border-bottom: none;
+}
+
+.productName {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 14px;
+  color: #ffffff;
+  flex: 1;
+}
+
+.productViews {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+}

@@ -1,0 +1,70 @@
+.activityFeed {
+  padding: 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.title {
+  font-family: 'Playfair Display', serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 20px 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.activityList {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.activityList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.activityList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.activityList::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.activityItem {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.activityItem:last-child {
+  border-bottom: none;
+}
+
+.activityTime {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.activityMessage {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 14px;
+  color: #ffffff;
+  line-height: 1.5;
+}
+
+.emptyState {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.3);
+  text-align: center;
+  padding: 40px 20px;
+  font-style: italic;
+}
