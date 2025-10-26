@@ -8,6 +8,8 @@ let activityWS = null;
 let analysisWS = null;
 let metricsWS = null;
 let alertsWS = null;
+let inventoryWS = null;
+let customersWS = null;
 
 // Configuration
 const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -28,6 +30,8 @@ function initDashboard() {
     connectAnalysisWebSocket();
     connectMetricsWebSocket();
     connectAlertsWebSocket();
+    connectInventoryWebSocket();
+    connectCustomersWebSocket();
 
     // Setup UI event listeners
     setupOverlayControls();
@@ -35,6 +39,10 @@ function initDashboard() {
 
     // Load overlay settings
     loadOverlaySettings();
+
+    // Load initial data for new panels
+    loadInventoryData();
+    loadCustomerData();
 
     console.log('Dashboard initialized');
 }
@@ -141,6 +149,74 @@ function connectAlertsWebSocket() {
     alertsWS.onclose = () => {
         console.log('Alerts WebSocket closed. Reconnecting in 3s...');
         setTimeout(connectAlertsWebSocket, 3000);
+    };
+}
+
+/**
+ * Connect to Inventory WebSocket
+ */
+function connectInventoryWebSocket() {
+    const wsUrl = `${WS_PROTOCOL}//${WS_HOST}/ws/inventory`;
+    console.log('Connecting to inventory stream:', wsUrl);
+
+    inventoryWS = new WebSocket(wsUrl);
+
+    inventoryWS.onopen = () => {
+        console.log('Inventory WebSocket connected');
+    };
+
+    inventoryWS.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'inventory' && data.data) {
+                updateInventoryDisplay(data.data);
+            }
+        } catch (error) {
+            console.error('Error parsing inventory message:', error);
+        }
+    };
+
+    inventoryWS.onerror = (error) => {
+        console.error('Inventory WebSocket error:', error);
+    };
+
+    inventoryWS.onclose = () => {
+        console.log('Inventory WebSocket closed. Reconnecting in 3s...');
+        setTimeout(connectInventoryWebSocket, 3000);
+    };
+}
+
+/**
+ * Connect to Customers WebSocket
+ */
+function connectCustomersWebSocket() {
+    const wsUrl = `${WS_PROTOCOL}//${WS_HOST}/ws/customers`;
+    console.log('Connecting to customers stream:', wsUrl);
+
+    customersWS = new WebSocket(wsUrl);
+
+    customersWS.onopen = () => {
+        console.log('Customers WebSocket connected');
+    };
+
+    customersWS.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'customers' && data.data) {
+                updateCustomerStats(data.data);
+            }
+        } catch (error) {
+            console.error('Error parsing customers message:', error);
+        }
+    };
+
+    customersWS.onerror = (error) => {
+        console.error('Customers WebSocket error:', error);
+    };
+
+    customersWS.onclose = () => {
+        console.log('Customers WebSocket closed. Reconnecting in 3s...');
+        setTimeout(connectCustomersWebSocket, 3000);
     };
 }
 
@@ -625,6 +701,295 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
+ * Load Inventory Data
+ */
+async function loadInventoryData() {
+    try {
+        const response = await fetch('/api/inventory/metrics/summary');
+        if (response.ok) {
+            const data = await response.json();
+            updateInventoryDisplay(data);
+        }
+    } catch (error) {
+        console.error('Error loading inventory data:', error);
+    }
+
+    // Also load product list
+    try {
+        const response = await fetch('/api/inventory/products?active_only=true');
+        if (response.ok) {
+            const products = await response.json();
+            displayProductList(products);
+        }
+    } catch (error) {
+        console.error('Error loading product list:', error);
+    }
+}
+
+/**
+ * Update Inventory Display
+ */
+function updateInventoryDisplay(data) {
+    // Update summary stats
+    const totalProducts = document.getElementById('inv-total-products');
+    const totalViews = document.getElementById('inv-total-views');
+    const totalTouches = document.getElementById('inv-total-touches');
+
+    if (totalProducts) totalProducts.textContent = data.total_products || 0;
+    if (totalViews) totalViews.textContent = data.total_views || 0;
+    if (totalTouches) totalTouches.textContent = data.total_touches || 0;
+
+    // Display most viewed/interacted products
+    const inventoryList = document.getElementById('inventory-list');
+    if (!inventoryList) return;
+
+    // Clear existing items
+    inventoryList.innerHTML = '';
+
+    // Show most interacted products
+    const topProducts = data.most_interacted_products || [];
+
+    if (topProducts.length === 0) {
+        inventoryList.innerHTML = '<div class="placeholder-text">No product data available</div>';
+        return;
+    }
+
+    topProducts.forEach(product => {
+        const productItem = createProductItem(product);
+        inventoryList.appendChild(productItem);
+    });
+}
+
+/**
+ * Display Product List
+ */
+function displayProductList(products) {
+    const inventoryList = document.getElementById('inventory-list');
+    if (!inventoryList || products.length === 0) return;
+
+    inventoryList.innerHTML = '';
+
+    products.slice(0, 10).forEach(product => {
+        const productItem = createProductItemFromFull(product);
+        inventoryList.appendChild(productItem);
+    });
+}
+
+/**
+ * Create Product Item Element (from summary)
+ */
+function createProductItem(product) {
+    const item = document.createElement('div');
+    item.className = 'product-item';
+
+    const header = document.createElement('div');
+    header.className = 'product-header';
+
+    const name = document.createElement('div');
+    name.className = 'product-name';
+    name.textContent = product.product_name || 'Unknown Product';
+
+    header.appendChild(name);
+
+    const metrics = document.createElement('div');
+    metrics.className = 'product-metrics';
+    metrics.innerHTML = `
+        <span class="product-metric">👁 ${product.views || 0}</span>
+        <span class="product-metric">👆 ${product.interactions || 0}</span>
+    `;
+
+    item.appendChild(header);
+    item.appendChild(metrics);
+
+    return item;
+}
+
+/**
+ * Create Product Item Element (from full product)
+ */
+function createProductItemFromFull(product) {
+    const item = document.createElement('div');
+    item.className = 'product-item';
+
+    const header = document.createElement('div');
+    header.className = 'product-header';
+
+    const name = document.createElement('div');
+    name.className = 'product-name';
+    name.textContent = product.name || 'Unknown Product';
+
+    const category = document.createElement('span');
+    category.className = 'product-category';
+    category.textContent = product.category || 'General';
+
+    header.appendChild(name);
+    header.appendChild(category);
+
+    item.appendChild(header);
+
+    return item;
+}
+
+/**
+ * Load Customer Data
+ */
+async function loadCustomerData() {
+    try {
+        const response = await fetch('/api/customers/stats');
+        if (response.ok) {
+            const data = await response.json();
+            updateCustomerStats(data);
+        }
+    } catch (error) {
+        console.error('Error loading customer stats:', error);
+    }
+
+    // Load customer list
+    try {
+        const response = await fetch('/api/customers/list?limit=20');
+        if (response.ok) {
+            const customers = await response.json();
+            displayCustomerList(customers);
+        }
+    } catch (error) {
+        console.error('Error loading customer list:', error);
+    }
+}
+
+/**
+ * Update Customer Stats
+ */
+function updateCustomerStats(data) {
+    const totalProfiles = document.getElementById('cust-total-profiles');
+    const activeNow = document.getElementById('cust-active-now');
+    const vipCount = document.getElementById('cust-vip-count');
+
+    if (totalProfiles) totalProfiles.textContent = data.total_profiles || 0;
+    if (activeNow) activeNow.textContent = data.active_visitors || 0;
+    if (vipCount) vipCount.textContent = data.vip_customers || 0;
+}
+
+/**
+ * Display Customer List
+ */
+function displayCustomerList(customers) {
+    const customerList = document.getElementById('customer-list');
+    if (!customerList) return;
+
+    customerList.innerHTML = '';
+
+    if (customers.length === 0) {
+        customerList.innerHTML = '<div class="placeholder-text">No customer data available</div>';
+        return;
+    }
+
+    customers.forEach(customer => {
+        const customerItem = createCustomerItem(customer);
+        customerList.appendChild(customerItem);
+    });
+}
+
+/**
+ * Create Customer Item Element
+ */
+function createCustomerItem(customer) {
+    const item = document.createElement('div');
+    item.className = 'customer-item';
+    if (customer.vip_status) {
+        item.classList.add('vip');
+    }
+
+    const header = document.createElement('div');
+    header.className = 'customer-header';
+
+    const customerId = document.createElement('div');
+    customerId.className = 'customer-id';
+    customerId.textContent = `Customer ${customer.profile_uuid ? customer.profile_uuid.substring(0, 8) : 'Unknown'}`;
+
+    header.appendChild(customerId);
+
+    if (customer.vip_status) {
+        const vipBadge = document.createElement('span');
+        vipBadge.className = 'vip-badge';
+        vipBadge.textContent = 'VIP';
+        header.appendChild(vipBadge);
+    }
+
+    const details = document.createElement('div');
+    details.className = 'customer-details';
+
+    // Visit count
+    const visitRow = document.createElement('div');
+    visitRow.className = 'customer-detail-row';
+    visitRow.innerHTML = `
+        <span class="detail-label">Visits:</span>
+        <span class="detail-value">${customer.total_visits || 0}</span>
+    `;
+    details.appendChild(visitRow);
+
+    // Frequency
+    if (customer.visit_frequency) {
+        const freqRow = document.createElement('div');
+        freqRow.className = 'customer-detail-row';
+        freqRow.innerHTML = `
+            <span class="detail-label">Frequency:</span>
+            <span class="visit-frequency">${customer.visit_frequency}</span>
+        `;
+        details.appendChild(freqRow);
+    }
+
+    // Purchase intent
+    if (customer.purchase_intent_score !== null && customer.purchase_intent_score !== undefined) {
+        const intentRow = document.createElement('div');
+        intentRow.className = 'customer-detail-row';
+
+        const intentScore = (customer.purchase_intent_score * 100).toFixed(0);
+        let intentClass = 'low';
+        if (customer.purchase_intent_score >= 0.7) intentClass = 'high';
+        else if (customer.purchase_intent_score >= 0.4) intentClass = 'medium';
+
+        intentRow.innerHTML = `
+            <span class="detail-label">Intent:</span>
+            <div class="purchase-intent">
+                <div class="intent-bar">
+                    <div class="intent-fill ${intentClass}" style="width: ${intentScore}%"></div>
+                </div>
+                <span style="font-size: 0.7rem; color: var(--text-secondary);">${intentScore}%</span>
+            </div>
+        `;
+        details.appendChild(intentRow);
+    }
+
+    // Last visit
+    if (customer.last_visit) {
+        const lastVisit = document.createElement('div');
+        lastVisit.className = 'last-visit';
+        const visitDate = new Date(customer.last_visit);
+        lastVisit.textContent = `Last seen: ${formatTimeAgo(visitDate)}`;
+        details.appendChild(lastVisit);
+    }
+
+    item.appendChild(header);
+    item.appendChild(details);
+
+    return item;
+}
+
+/**
+ * Format time ago helper
+ */
+function formatTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+
+    return date.toLocaleDateString();
+}
+
+/**
  * Handle Page Visibility Change
  */
 document.addEventListener('visibilitychange', () => {
@@ -645,6 +1010,12 @@ document.addEventListener('visibilitychange', () => {
         if (alertsWS && alertsWS.readyState !== WebSocket.OPEN) {
             connectAlertsWebSocket();
         }
+        if (inventoryWS && inventoryWS.readyState !== WebSocket.OPEN) {
+            connectInventoryWebSocket();
+        }
+        if (customersWS && customersWS.readyState !== WebSocket.OPEN) {
+            connectCustomersWebSocket();
+        }
     }
 });
 
@@ -656,4 +1027,6 @@ window.addEventListener('beforeunload', () => {
     if (analysisWS) analysisWS.close();
     if (metricsWS) metricsWS.close();
     if (alertsWS) alertsWS.close();
+    if (inventoryWS) inventoryWS.close();
+    if (customersWS) customersWS.close();
 });

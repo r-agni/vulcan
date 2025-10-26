@@ -336,6 +336,20 @@ class FaceDetector:
         self.known_face_encodings.append(face_encoding)
         self.known_face_ids.append(person.id)
 
+        # Also add to merged_logs users table
+        try:
+            from merged_logs import MergedLogger
+            merged_logger = MergedLogger()
+            merged_logger.create_or_update_user(
+                person_id=person.id,
+                name=person.name,
+                face_encoding=pickle.dumps(face_encoding),
+                thumbnail_path=thumbnail_path
+            )
+            print(f"Added person to merged logs: {person.name} (ID: {person.id})")
+        except Exception as e:
+            print(f"Error adding to merged logs: {e}")
+
         print(f"Added new person to database: {person.name} (ID: {person.id})")
         return person
 

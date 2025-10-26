@@ -13,7 +13,11 @@
       "Bash(git mv app/gaze_detector.py app/detection/)",
       "Bash(git mv app/interaction_detector.py app/detection/)",
       "Bash(python -m py_compile main.py)",
-      "Bash(tree app -L 2 -I __pycache__)"
+      "Bash(tree app -L 2 -I __pycache__)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python test_merged_logs.py:*)",
+      "Bash(sqlite3:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

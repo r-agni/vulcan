@@ -307,6 +307,7 @@ class ProductInteraction(Base):
     id = Column(Integer, primary_key=True, index=True)
     person_id = Column(Integer, nullable=False)
     zone_id = Column(Integer, nullable=False)
+    product_id = Column(Integer, nullable=True, index=True)  # FK to Product (if identified)
     timestamp = Column(DateTime, default=datetime.utcnow)
     interaction_type = Column(String)  # "looked_at", "picked_up", "examined", "reaching", "touching", "putting_back"
     duration_seconds = Column(Float, nullable=True)
@@ -543,6 +544,133 @@ class GazeEvent(Base):
 
     # Status
     is_fixation = Column(Boolean, default=False)  # True if fixation (sustained gaze)
+
+    # Product-specific gaze
+    product_id = Column(Integer, nullable=True, index=True)  # Target product if identified
+
+
+# ==================== PRODUCT INVENTORY TABLES ====================
+
+class Product(Base):
+    """Product catalog - items tracked in store"""
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    category = Column(String, nullable=True, index=True)  # "Electronics", "Clothing", etc.
+    sku = Column(String, nullable=True, unique=True)  # Product SKU/barcode
+    description = Column(Text, nullable=True)
+
+    # Visual identification
+    image_path = Column(String, nullable=True)  # Reference product image
+    color = Column(String, nullable=True)  # For visualization
+
+    # Pricing (optional)
+    price = Column(Float, nullable=True)
+
+    # Status
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # AI-generated metadata
+    gemini_description = Column(Text, nullable=True)  # AI-generated product description
+    gemini_confidence = Column(Float, nullable=True)  # Confidence in AI identification
+
+
+class ProductZoneMapping(Base):
+    """Maps products to specific locations within zones"""
+    __tablename__ = "product_zone_mappings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, nullable=False, index=True)  # FK to Product
+    zone_id = Column(Integer, nullable=False, index=True)  # FK to Zone
+
+    # Position within zone (normalized 0-1 coordinates)
+    position_x = Column(Float, nullable=True)
+    position_y = Column(Float, nullable=True)
+    bounding_box = Column(JSON, nullable=True)  # {"x1": 0.1, "y1": 0.2, "x2": 0.3, "y2": 0.4}
+
+    # Shelf/display information
+    shelf_level = Column(String, nullable=True)  # "top", "middle", "bottom"
+    display_section = Column(String, nullable=True)  # Section identifier
+
+    # Metadata
+    is_primary_location = Column(Boolean, default=True)  # Primary vs secondary location
+    stock_status = Column(String, default="in_stock")  # "in_stock", "low_stock", "out_of_stock"
+    last_verified = Column(DateTime, default=datetime.utcnow)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ProductInteractionEvent(Base):
+    """Extended product interaction tracking with detailed metrics"""
+    __tablename__ = "product_interaction_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    person_id = Column(Integer, nullable=True, index=True)
+    body_tracking_id = Column(String, nullable=True, index=True)
+    product_id = Column(Integer, nullable=False, index=True)  # FK to Product
+    zone_id = Column(Integer, nullable=False, index=True)  # FK to Zone
+
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Interaction details
+    interaction_type = Column(String, nullable=False, index=True)
+    # Types: "gazing", "reaching", "touching", "picking_up", "examining", "putting_back", "comparing"
+
+    duration_seconds = Column(Float, nullable=True)
+    engagement_score = Column(Float, nullable=True)  # 0-1 based on interaction quality
+
+    # Hand interaction data
+    hand_position = Column(JSON, nullable=True)  # {x, y}
+    gesture_type = Column(String, nullable=True)  # "pointing", "grabbing", "holding", "open_palm"
+    hand_landmarks = Column(JSON, nullable=True)  # Full hand skeleton
+
+    # Gaze data
+    gaze_duration_seconds = Column(Float, nullable=True)
+    gaze_confidence = Column(Float, nullable=True)
+
+    # Outcome
+    interaction_ended = Column(Boolean, default=False)
+    outcome = Column(String, nullable=True)  # "picked_up", "put_back", "ignored", "purchased"
+
+    # Metadata
+    confidence_score = Column(Float)  # Overall detection confidence
+    notes = Column(Text, nullable=True)
+
+
+class ProductEngagementMetrics(Base):
+    """Aggregated metrics per product for analytics"""
+    __tablename__ = "product_engagement_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, nullable=False, unique=True, index=True)  # FK to Product
+
+    # View metrics
+    total_views = Column(Integer, default=0)  # Number of times gazed at
+    total_view_duration_seconds = Column(Float, default=0.0)
+    avg_view_duration = Column(Float, default=0.0)
+
+    # Touch metrics
+    total_touches = Column(Integer, default=0)  # Number of times touched
+    total_pickups = Column(Integer, default=0)  # Number of times picked up
+    total_putbacks = Column(Integer, default=0)  # Number of times put back
+
+    # Engagement
+    total_engagement_time_seconds = Column(Float, default=0.0)
+    avg_engagement_score = Column(Float, default=0.0)
+
+    # Conversion
+    purchase_intent_score = Column(Float, default=0.0)  # 0-1 likelihood of purchase
+    estimated_conversions = Column(Integer, default=0)  # Estimated purchases
+
+    # Temporal data
+    last_interaction = Column(DateTime, nullable=True)
+    peak_interaction_hour = Column(Integer, nullable=True)  # 0-23
+
+    # Update tracking
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 def init_db():

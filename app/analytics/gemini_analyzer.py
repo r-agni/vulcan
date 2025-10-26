@@ -1158,6 +1158,120 @@ class GeminiAnalyzer:
         except:
             return None
 
+    # ==================== PRODUCT DETECTION IN ZONES ====================
+
+    def analyze_products_in_zone(
+        self,
+        frame_path: str,
+        zone_name: str,
+        zone_type: str = "product"
+    ) -> Dict[str, any]:
+        """
+        Analyze a frame and identify products visible in a specific zone
+
+        Args:
+            frame_path: Path to frame image
+            zone_name: Name of the zone being analyzed
+            zone_type: Type of zone
+
+        Returns:
+            Dictionary with detected products
+        """
+        try:
+            # Read frame as bytes
+            with open(frame_path, 'rb') as f:
+                frame_bytes = f.read()
+
+            prompt = f"""
+            Analyze this retail store image focusing on the {zone_name} area.
+
+            Identify ALL visible products in this zone and provide your response in STRICT JSON format:
+
+            {{
+              "products": [
+                {{
+                  "name": "Product Name",
+                  "category": "Category (Electronics, Clothing, Food, etc.)",
+                  "description": "Brief description",
+                  "position": {{
+                    "x": 0.0-1.0,
+                    "y": 0.0-1.0,
+                    "bounding_box": {{"x1": 0.0, "y1": 0.0, "x2": 0.0, "y2": 0.0}},
+                    "shelf_level": "top|middle|bottom"
+                  }},
+                  "confidence": 0.0-1.0,
+                  "visibility": "fully_visible|partially_visible|obscured"
+                }}
+              ]
+            }}
+
+            COORDINATE SYSTEM:
+            - All coordinates normalized between 0.0 and 1.0
+            - (0.0, 0.0) = top-left corner
+            - (1.0, 1.0) = bottom-right corner
+            - Position x,y = center point of product
+            - Bounding box = rectangular area containing product
+
+            RULES:
+            - Identify 3-10 distinct products (more if clearly visible)
+            - Be specific with product names (e.g., "Wireless Mouse" not "Mouse")
+            - Categorize accurately
+            - Estimate position based on where product appears in image
+            - Rate confidence honestly (0.0 to 1.0)
+
+            Provide ONLY the JSON response with no additional text.
+            """
+
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=[
+                    {"role": "user", "parts": [
+                        {
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": frame_bytes
+                            }
+                        },
+                        {"text": prompt}
+                    ]}
+                ]
+            )
+
+            # Parse JSON response
+            response_text = response.text.strip()
+
+            # Try to extract JSON from response
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if json_match:
+                response_text = json_match.group(1)
+            elif response_text.startswith('```') and response_text.endswith('```'):
+                response_text = response_text.strip('`').strip()
+                if response_text.startswith('json'):
+                    response_text = response_text[4:].strip()
+
+            product_data = json.loads(response_text)
+
+            return {
+                "products": product_data.get("products", []),
+                "zone_name": zone_name,
+                "zone_type": zone_type,
+                "raw_response": response.text,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+        except json.JSONDecodeError as e:
+            print(f"Error parsing Gemini JSON response: {e}")
+            print(f"Raw response: {response.text if 'response' in locals() else 'No response'}")
+            return {
+                "error": f"JSON parsing error: {str(e)}",
+                "raw_response": response.text if 'response' in locals() else None
+            }
+        except Exception as e:
+            print(f"Error analyzing products in zone: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
     # ==================== LAYOUT ZONE GENERATION ====================
 
     def analyze_layout_and_generate_zones(self, video_path: str, youtube_url: str = None) -> Dict[str, any]:

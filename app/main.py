@@ -29,6 +29,13 @@ from rag.rag_api import create_rag_router
 # Import Staff Location Tracker
 from app.tracking.staff_location_tracker import router as staff_location_router
 
+# Import Merged Logs System
+from merged_logs import init_merged_db, collect_analytics_snapshot, MergedLogger
+
+# Import Product Inventory System
+from app.inventory import ProductDetector, ProductInteractionTracker
+from app.api.inventory_routes import router as inventory_router
+
 load_dotenv()
 
 # Initialize FastAPI app
@@ -40,6 +47,9 @@ app.include_router(rag_router)
 
 # Add Staff Location Tracker router
 app.include_router(staff_location_router)
+
+# Add Product Inventory router
+app.include_router(inventory_router)
 
 # Initialize components
 camera = CameraManager(camera_source="https://www.youtube.com/watch?v=KMJS66jBtVQ")
@@ -73,10 +83,23 @@ gaze_detector = GazeDetector(
 alert_generator = AlertGenerator(api_key=os.getenv("GEMINI_API_KEY"))
 alert_manager = AlertManager(max_queue_size=50, alert_expiry_seconds=600)
 
+# Initialize Merged Logs Logger
+merged_logger = MergedLogger()
+
+# Initialize Product Inventory System
+product_detector = ProductDetector(gemini_analyzer)
+product_interaction_tracker = ProductInteractionTracker(
+    product_detector=product_detector,
+    gaze_detector=gaze_detector,
+    interaction_detector=interaction_detector
+)
+
 # WebSocket connections
 active_connections: List[WebSocket] = []
 metrics_connections: List[WebSocket] = []
 alert_connections: List[WebSocket] = []
+inventory_connections: List[WebSocket] = []
+customer_connections: List[WebSocket] = []
 
 # Global state
 current_detected_person = None
@@ -189,6 +212,65 @@ def initialize_zones_with_gemini():
         print(f"FULL ERROR TRACEBACK:\n{error_details}")
 
 
+def initialize_products_in_zones():
+    """Use Gemini to detect and catalog products in product zones"""
+    try:
+        import time
+        from app.core.database import SessionLocal
+
+        log_activity("🛍️ Detecting products in zones...", "system")
+
+        # Wait for zones to be created
+        time.sleep(5)
+
+        if not zones_data:
+            log_activity("❌ No zones available for product detection", "system")
+            return
+
+        # Get current frame for analysis
+        frame = camera.get_current_frame()
+        if frame is None:
+            log_activity("❌ No frame available for product detection", "system")
+            return
+
+        # Create database session
+        db = SessionLocal()
+
+        try:
+            # Detect products in all product zones
+            detected_products = product_detector.detect_products_in_zones(
+                frame=frame,
+                zones=zones_data,
+                db=db
+            )
+
+            total_products = sum(len(products) for products in detected_products.values())
+
+            if total_products > 0:
+                log_activity(f"✅ Product detection complete: {total_products} products catalogued", "system")
+
+                # Log product summary by zone
+                for zone_id, products in detected_products.items():
+                    zone_name = next((z['name'] for z in zones_data if z.get('id') == zone_id), f'Zone {zone_id}')
+                    log_activity(f"  ✓ {zone_name}: {len(products)} products", "system")
+            else:
+                log_activity("⚠️ No products detected in zones", "system")
+
+        except Exception as e:
+            log_activity(f"❌ Error detecting products: {str(e)}", "system")
+            print(f"Product detection error: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            db.close()
+
+    except Exception as e:
+        log_activity(f"❌ Error in product initialization: {str(e)}", "system")
+        print(f"Error in initialize_products_in_zones: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def continuous_gemini_analysis_and_alerts():
     """Continuously analyze video with Gemini and generate alerts every 5 seconds"""
     try:
@@ -199,7 +281,7 @@ def continuous_gemini_analysis_and_alerts():
         # Wait for system to stabilize
         time.sleep(5)
 
-        frame_analysis_interval = 5  # Analyze every 5 seconds
+        frame_analysis_interval = 1  # Analyze every 1 second
         last_analysis_time = 0
 
         while True:
@@ -303,6 +385,49 @@ def continuous_gemini_analysis_and_alerts():
                     log_activity(f"🚨 Generated {len(added_alerts)} new alert(s)", "system")
                     asyncio.run(broadcast_alert_update())
 
+                # === SAVE MERGED LOGS SNAPSHOT (Every 5 seconds) ===
+                try:
+                    # Get database session for product metrics
+                    from app.core.database import SessionLocal
+                    db = SessionLocal()
+
+                    try:
+                        snapshot_data = collect_analytics_snapshot(
+                            current_metrics=current_metrics,
+                            zones_data=zones_data,
+                            lines_data=lines_data,
+                            active_persons=active_persons,
+                            current_detections=current_detections,
+                            trajectory_tracker=trajectory_tracker,
+                            dwell_calculator=dwell_calculator,
+                            occupancy_counter=occupancy_counter,
+                            line_crossing_detector=line_crossing_detector,
+                            queue_detector=queue_detector,
+                            heatmap_generator=heatmap_generator,
+                            interaction_tracker=interaction_tracker,
+                            gaze_detector=gaze_detector,
+                            gemini_analysis_text=analysis_text,
+                            gemini_structured_data=None,  # Would need structured analysis if available
+                            alert_manager=alert_manager,
+                            # Product inventory components
+                            product_detector=product_detector,
+                            product_interaction_tracker=product_interaction_tracker,
+                            db_session=db,
+                            # Camera info
+                            camera_name="Main Store Camera",
+                            camera_source=camera.camera_source,
+                            room_name="Store Floor 1"
+                        )
+                    finally:
+                        db.close()
+
+                    saved_snapshot = merged_logger.save_camera_snapshot(snapshot_data)
+                    if saved_snapshot:
+                        log_activity(f"💾 Merged snapshot saved (ID: {saved_snapshot.id})", "system")
+                except Exception as e:
+                    log_activity(f"❌ Error saving merged snapshot: {str(e)}", "system")
+                    print(f"Merged snapshot error: {e}")
+
                 # Clean up temporary file
                 try:
                     os.remove(frame_path)
@@ -324,6 +449,13 @@ def continuous_gemini_analysis_and_alerts():
 async def startup_event():
     """Initialize system on startup"""
     log_activity("🎬 System initializing...", "system")
+
+    # Initialize merged logs database
+    try:
+        init_merged_db()
+        log_activity("✓ Merged logs database initialized", "system")
+    except Exception as e:
+        log_activity(f"❌ Error initializing merged logs: {str(e)}", "system")
 
     # Create directories
     os.makedirs("data/uploads/frames", exist_ok=True)
@@ -350,6 +482,10 @@ async def startup_event():
     print("DEBUG: Starting Gemini zone generation thread...")
     threading.Thread(target=initialize_zones_with_gemini, daemon=True).start()
     print("DEBUG: Thread started")
+
+    # Initialize product detection after zones are created
+    log_activity("🛍️ Initializing product inventory system...", "system")
+    threading.Thread(target=initialize_products_in_zones, daemon=True).start()
 
     # Register frame callback for detection
     camera.register_frame_callback(process_frame)
@@ -479,6 +615,7 @@ def process_frame(frame):
                 person_bbox=person_bbox
             )
 
+            gaze_target_position = None
             if gaze_data:
                 # Update gaze fixation tracking
                 fixation = gaze_detector.update_fixation(
@@ -488,6 +625,9 @@ def process_frame(frame):
                     zones=zones_data,
                     timestamp=datetime.now(UTC)
                 )
+
+                # Get gaze target position for product tracking
+                gaze_target_position = gaze_data.get('estimated_gaze_point')
 
                 # Log significant fixations (optional - can be periodic)
                 # Uncomment to log every fixation to DB
@@ -505,13 +645,70 @@ def process_frame(frame):
                 #     finally:
                 #         db.close()
 
-        # Cleanup old interactions and fixations
+            # === PRODUCT INTERACTION TRACKING ===
+            # Track product-specific interactions if person is in a product zone
+            if current_zone_id:
+                try:
+                    from app.core.database import SessionLocal
+                    db = SessionLocal()
+
+                    try:
+                        # Get hand position and gesture from interactions
+                        hand_position = None
+                        gesture_type = None
+
+                        if interactions:
+                            # Use the latest interaction for hand data
+                            latest_interaction = interactions[-1]
+                            hand_position = latest_interaction.hand_position
+                            gesture_type = latest_interaction.gesture_type
+
+                        # Update product interaction tracker
+                        product_interactions = product_interaction_tracker.update(
+                            tracking_id=str(person_id),
+                            person_id=person_id,
+                            zone_id=current_zone_id,
+                            hand_position=hand_position,
+                            gesture_type=gesture_type,
+                            gaze_target_position=gaze_target_position,
+                            timestamp=datetime.now(UTC),
+                            db=db
+                        )
+
+                    finally:
+                        db.close()
+
+                except Exception as e:
+                    print(f"Error in product interaction tracking: {e}")
+
+        # Cleanup old interactions, fixations, and product interactions
         interaction_detector.cleanup_old_interactions(max_age_seconds=5.0)
         gaze_detector.cleanup_old_fixations(max_age_seconds=5.0)
         interaction_tracker.cleanup_old_interactions(max_age_seconds=10.0)
 
+        # Cleanup old product interactions
+        try:
+            from app.core.database import SessionLocal
+            db = SessionLocal()
+            try:
+                product_interaction_tracker.cleanup_old_interactions(db, max_age_seconds=10.0)
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"Error cleaning up product interactions: {e}")
+
         # Update occupancy counter with all positions
         zone_occupancies = occupancy_counter.update(person_positions, datetime.now(UTC))
+
+        # Update merged logs users table for detected persons
+        try:
+            for tracking_id, person_data in active_persons.items():
+                person_id = person_data.get('person_id')
+                if person_id:
+                    # Update last_seen for recognized persons
+                    merged_logger.update_user_last_seen(person_id)
+        except Exception as e:
+            print(f"Error updating merged users: {e}")
 
         # Build current_detections for overlay rendering
         for person_id, position in person_positions.items():
@@ -631,6 +828,55 @@ async def broadcast_alert_update():
         alert_connections.remove(conn)
 
 
+async def broadcast_inventory_update():
+    """Broadcast inventory updates to all connected websockets"""
+    from app.core.database import SessionLocal as DB
+    disconnected = []
+
+    db = DB()
+    try:
+        # Get summary data
+        from app.api.inventory_routes import get_metrics_summary
+        metrics = await get_metrics_summary(db)
+
+        for connection in inventory_connections:
+            try:
+                await connection.send_json({"type": "inventory", "data": metrics})
+            except:
+                disconnected.append(connection)
+
+        for conn in disconnected:
+            inventory_connections.remove(conn)
+    except Exception as e:
+        print(f"Error broadcasting inventory: {e}")
+    finally:
+        db.close()
+
+
+async def broadcast_customer_update():
+    """Broadcast customer updates to all connected websockets"""
+    from app.core.database import SessionLocal as DB
+    disconnected = []
+
+    db = DB()
+    try:
+        # Get stats
+        stats_data = await get_customer_stats()
+
+        for connection in customer_connections:
+            try:
+                await connection.send_json({"type": "customers", "data": stats_data})
+            except:
+                disconnected.append(connection)
+
+        for conn in disconnected:
+            customer_connections.remove(conn)
+    except Exception as e:
+        print(f"Error broadcasting customers: {e}")
+    finally:
+        db.close()
+
+
 
 
 @app.websocket("/ws")
@@ -697,17 +943,59 @@ async def websocket_alerts(websocket: WebSocket):
     """WebSocket endpoint for real-time alerts"""
     await websocket.accept()
     alert_connections.append(websocket)
-    
+
     try:
         # Send current alerts on connect
         alerts = alert_manager.get_alerts_for_dashboard()
         await websocket.send_json({"type": "alerts", "data": alerts})
-        
+
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         if websocket in alert_connections:
             alert_connections.remove(websocket)
+
+
+@app.websocket("/ws/inventory")
+async def websocket_inventory(websocket: WebSocket):
+    """WebSocket endpoint for real-time inventory updates"""
+    await websocket.accept()
+    inventory_connections.append(websocket)
+
+    try:
+        # Send initial inventory data on connect
+        from app.core.database import SessionLocal as DB
+        db = DB()
+        try:
+            from app.api.inventory_routes import get_metrics_summary
+            metrics = await get_metrics_summary(db)
+            await websocket.send_json({"type": "inventory", "data": metrics})
+        finally:
+            db.close()
+
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        if websocket in inventory_connections:
+            inventory_connections.remove(websocket)
+
+
+@app.websocket("/ws/customers")
+async def websocket_customers(websocket: WebSocket):
+    """WebSocket endpoint for real-time customer updates"""
+    await websocket.accept()
+    customer_connections.append(websocket)
+
+    try:
+        # Send initial customer stats on connect
+        stats = await get_customer_stats()
+        await websocket.send_json({"type": "customers", "data": stats})
+
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        if websocket in customer_connections:
+            customer_connections.remove(websocket)
 
 
 @app.get("/video_feed")
@@ -1432,12 +1720,101 @@ async def get_customer_stats():
             CustomerProfile.opt_out_date == None
         ).count()
 
+        # Active visitors (last 1 hour)
+        active_cutoff = datetime.now(UTC) - timedelta(hours=1)
+        active_visitors = db.query(CustomerProfile).filter(
+            CustomerProfile.last_visit >= active_cutoff,
+            CustomerProfile.opt_out_date == None
+        ).count()
+
         return {
             "total_profiles": total_profiles,
             "vip_customers": vip_count,
             "total_visits": total_visits,
-            "recent_visitors_7d": recent_visitors
+            "recent_visitors_7d": recent_visitors,
+            "active_visitors": active_visitors
         }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/api/customers/list")
+async def get_customer_list(limit: int = 20, active_only: bool = False):
+    """Get list of customers with basic info"""
+    db = SessionLocal()
+    try:
+        from database import CustomerProfile
+
+        query = db.query(CustomerProfile).filter(
+            CustomerProfile.opt_out_date == None
+        )
+
+        if active_only:
+            # Active in last hour
+            active_cutoff = datetime.now(UTC) - timedelta(hours=1)
+            query = query.filter(CustomerProfile.last_visit >= active_cutoff)
+
+        customers = query.order_by(CustomerProfile.last_visit.desc()).limit(limit).all()
+
+        return [
+            {
+                "id": c.id,
+                "profile_uuid": c.profile_uuid,
+                "first_visit": c.first_visit.isoformat() if c.first_visit else None,
+                "last_visit": c.last_visit.isoformat() if c.last_visit else None,
+                "total_visits": c.total_visits,
+                "visit_frequency": c.visit_frequency,
+                "favorite_zones": c.favorite_zones,
+                "avg_visit_duration": c.avg_visit_duration_minutes,
+                "vip_status": c.vip_status,
+                "purchase_intent_score": c.avg_purchase_intent_score,
+                "preferred_categories": c.preferred_product_categories
+            }
+            for c in customers
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/api/customers/recent-visits")
+async def get_recent_customer_visits(hours: int = 24, limit: int = 50):
+    """Get recent customer visits"""
+    db = SessionLocal()
+    try:
+        from database import CustomerVisit, CustomerProfile
+
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
+
+        visits = db.query(CustomerVisit).filter(
+            CustomerVisit.visit_date >= cutoff
+        ).order_by(CustomerVisit.visit_date.desc()).limit(limit).all()
+
+        result = []
+        for visit in visits:
+            profile = db.query(CustomerProfile).filter(
+                CustomerProfile.id == visit.profile_id
+            ).first()
+
+            if profile and not profile.opt_out_date:
+                result.append({
+                    "visit_id": visit.id,
+                    "profile_uuid": profile.profile_uuid,
+                    "vip_status": profile.vip_status,
+                    "visit_date": visit.visit_date.isoformat(),
+                    "duration_minutes": visit.duration_minutes,
+                    "zones_visited": visit.zones_visited,
+                    "purchase_intent_score": visit.purchase_intent_score,
+                    "staff_interactions": visit.staff_interactions_count,
+                    "satisfaction_score": visit.satisfaction_score
+                })
+
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

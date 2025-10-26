@@ -551,7 +551,7 @@ h3 {
 /* Content Panels Grid */
 .content-panels {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 1.5rem;
     height: 100%;
     overflow-y: auto;
@@ -816,9 +816,16 @@ h3 {
 /* Note: Animations defined at top of file to avoid duplication */
 
 /* Responsive Design */
+@media (max-width: 1800px) {
+    .content-panels {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+    }
+}
+
 @media (max-width: 1400px) {
     .content-panels {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, 1fr);
         gap: 1rem;
     }
 
@@ -831,6 +838,13 @@ h3 {
     .content-panel .analysis-feed,
     .content-panel .rag-results {
         max-height: 350px;
+    }
+}
+
+@media (max-width: 900px) {
+    .content-panels {
+        grid-template-columns: 1fr;
+        gap: 1rem;
     }
 }
 
@@ -1069,4 +1083,292 @@ h3 {
 .rag-response em {
     color: var(--text-secondary);
     font-style: italic;
+}
+
+/* ==================== INVENTORY & CUSTOMER PANELS ==================== */
+
+/* Common Content Styles */
+.inventory-content,
+.customer-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 1rem;
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* Summary Stats Row */
+.inventory-stats,
+.customer-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.5rem;
+    background: rgba(37, 37, 37, 0.4);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.stat-item:hover {
+    background: rgba(42, 42, 42, 0.6);
+}
+
+.stat-label {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: 'Cormorant Garamond', serif;
+}
+
+.stat-value {
+    font-size: 1.4rem;
+    color: var(--accent);
+    font-weight: 600;
+    font-family: 'Playfair Display', serif;
+}
+
+/* Scrollable Lists */
+.inventory-list,
+.customer-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-right: 0.5rem;
+}
+
+.placeholder-text {
+    text-align: center;
+    color: var(--text-tertiary);
+    font-style: italic;
+    padding: 2rem 1rem;
+}
+
+/* Product List Items */
+.product-item {
+    background: rgba(37, 37, 37, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 0.75rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.product-item:hover {
+    background: rgba(42, 42, 42, 0.7);
+    border-color: rgba(74, 144, 226, 0.3);
+    transform: translateX(3px);
+}
+
+.product-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+}
+
+.product-name {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    font-weight: 600;
+    font-family: 'Playfair Display', serif;
+}
+
+.product-category {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    padding: 0.2rem 0.5rem;
+    background: rgba(74, 144, 226, 0.15);
+    border-radius: 4px;
+}
+
+.product-metrics {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+}
+
+.product-metric {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.metric-icon {
+    width: 12px;
+    height: 12px;
+    display: inline-block;
+}
+
+.engagement-bar {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 0.5rem;
+}
+
+.engagement-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4A90E2, #357ABD);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+/* Customer List Items */
+.customer-item {
+    background: rgba(37, 37, 37, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 0.75rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.customer-item:hover {
+    background: rgba(42, 42, 42, 0.7);
+    border-color: rgba(138, 43, 226, 0.3);
+    transform: translateX(3px);
+}
+
+.customer-item.vip {
+    border-color: rgba(255, 215, 0, 0.3);
+    background: rgba(255, 215, 0, 0.05);
+}
+
+.customer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.customer-id {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 600;
+}
+
+.vip-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 185, 0, 0.2));
+    border: 1px solid rgba(255, 215, 0, 0.4);
+    border-radius: 4px;
+    color: #FFD700;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.customer-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.customer-detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.detail-label {
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+}
+
+.detail-value {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.visit-frequency {
+    display: inline-block;
+    padding: 0.15rem 0.4rem;
+    background: rgba(74, 144, 226, 0.15);
+    border-radius: 3px;
+    font-size: 0.7rem;
+    color: #4A90E2;
+}
+
+.purchase-intent {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.intent-bar {
+    flex: 1;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.intent-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4CAF50, #45a049);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.intent-fill.low {
+    background: linear-gradient(90deg, #808080, #666666);
+}
+
+.intent-fill.medium {
+    background: linear-gradient(90deg, #F5A623, #E09612);
+}
+
+.intent-fill.high {
+    background: linear-gradient(90deg, #4CAF50, #45a049);
+}
+
+.last-visit {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    font-style: italic;
+    margin-top: 0.3rem;
+}
+
+/* Scrollbar for lists */
+.inventory-list::-webkit-scrollbar,
+.customer-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.inventory-list::-webkit-scrollbar-track,
+.customer-list::-webkit-scrollbar-track {
+    background: rgba(20, 20, 20, 0.5);
+    border-radius: 3px;
+}
+
+.inventory-list::-webkit-scrollbar-thumb,
+.customer-list::-webkit-scrollbar-thumb {
+    background: rgba(74, 144, 226, 0.3);
+    border-radius: 3px;
+}
+
+.inventory-list::-webkit-scrollbar-thumb:hover,
+.customer-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(74, 144, 226, 0.5);
 }
