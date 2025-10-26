@@ -1,0 +1,258 @@
+.chatPanel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: white;
+}
+
+.status {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+}
+
+.messagesContainer {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background: #f9fafb;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+}
+
+.welcomeText {
+  font-size: 16px;
+  color: #6b7280;
+  margin-bottom: 24px;
+}
+
+.suggestions {
+  width: 100%;
+  max-width: 400px;
+}
+
+.suggestionsLabel {
+  font-size: 14px;
+  color: #9ca3af;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.suggestionButton {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #374151;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.suggestionButton:hover {
+  background: #f3f4f6;
+  border-color: #667eea;
+  transform: translateX(4px);
+}
+
+.message {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message.user {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  margin-left: 20%;
+}
+
+.message.assistant {
+  background: white;
+  border: 1px solid #e5e7eb;
+  margin-right: 20%;
+}
+
+.messageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.role {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.message.user .role {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.message.assistant .role {
+  color: #667eea;
+}
+
+.timestamp {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.messageContent {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.message.user .messageContent {
+  color: white;
+}
+
+.message.assistant .messageContent {
+  color: #374151;
+}
+
+.sources {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  font-size: 12px;
+}
+
+.sourcesLabel {
+  font-weight: 600;
+  margin-right: 8px;
+  color: #6b7280;
+}
+
+.source {
+  display: inline-block;
+  margin-right: 12px;
+  color: #9ca3af;
+}
+
+.visualization {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.chart {
+  max-width: 100%;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.inputForm {
+  display: flex;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid #e5e7eb;
+  background: white;
+}
+
+.input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.input:disabled {
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.submitButton {
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.submitButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.submitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Scrollbar styling */
+.messagesContainer::-webkit-scrollbar {
+  width: 6px;
+}
+
+.messagesContainer::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+.messagesContainer::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.messagesContainer::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}

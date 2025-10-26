@@ -3,6 +3,7 @@ import useDashboardStore from '../../store/dashboardStore';
 import useInventory from '../../hooks/useInventory';
 import useCustomers from '../../hooks/useCustomers';
 import useAnalysis from '../../hooks/useAnalysis';
+import ChatPanel from '../ChatPanel/ChatPanel';
 
 function ContentPanels() {
   const { activities, analysisText, inventory, customers } = useDashboardStore();
@@ -100,6 +101,11 @@ function ContentPanels() {
             <div className={styles.statValue}>{customers.recent_visitors_7d || 0}</div>
           </div>
         </div>
+      </div>
+
+      {/* Chat Panel */}
+      <div className={`${styles.panel} ${styles.chatPanelContainer}`}>
+        <ChatPanel />
       </div>
     </div>
   );

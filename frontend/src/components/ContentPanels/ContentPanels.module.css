@@ -163,6 +163,14 @@
   font-style: italic;
 }
 
+/* Chat Panel Container */
+.chatPanelContainer {
+  grid-column: span 2;
+  min-height: 500px;
+  padding: 0;
+  overflow: hidden;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .contentPanels {
@@ -176,5 +184,9 @@
 
   .panelTitle {
     font-size: 20px;
+  }
+
+  .chatPanelContainer {
+    grid-column: span 1;
   }
 }

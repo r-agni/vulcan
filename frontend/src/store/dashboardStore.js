@@ -88,6 +88,16 @@ const useDashboardStore = create((set) => ({
         [overlayName]: !state.overlaySettings[overlayName],
       },
     })),
+
+  // Chat
+  sessionId: null,
+  chatMessages: [],
+  setSessionId: (sessionId) => set({ sessionId }),
+  addChatMessage: (message) =>
+    set((state) => ({
+      chatMessages: [...state.chatMessages, message],
+    })),
+  clearChat: () => set({ chatMessages: [], sessionId: null }),
 }));
 
 export default useDashboardStore;
