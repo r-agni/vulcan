@@ -143,49 +143,26 @@
 
                     <!-- RAG Search Panel -->
                     <section class="content-panel" id="panel-search">
-                        <div class="panel-header-styled">
-                            <h2 class="section-title">AI Analytics Assistant</h2>
-                            <p class="section-subtitle">Chat with your historical data</p>
-                        </div>
                         <div class="rag-chat-container">
-                            <!-- Chat Messages Area -->
-                            <div class="chat-messages" id="chat-messages">
-                                <div class="chat-welcome">
-                                    <div class="welcome-icon">🤖</div>
-                                    <div class="welcome-text">
-                                        <h3>Welcome to your AI Analytics Assistant</h3>
-                                        <p>Ask me anything about customer behaviors, zone activity, dwell times, or historical patterns.</p>
-                                    </div>
-                                    <div class="suggested-queries">
-                                        <div class="suggestion-label">Try asking:</div>
-                                        <button class="suggestion-btn" data-query="What zones had the most activity today?">
-                                            What zones had the most activity today?
-                                        </button>
-                                        <button class="suggestion-btn" data-query="Which customers spent the most time in the store?">
-                                            Which customers spent the most time?
-                                        </button>
-                                        <button class="suggestion-btn" data-query="Show me unusual behavior patterns">
-                                            Show me unusual behavior patterns
-                                        </button>
-                                    </div>
-                                </div>
+                            <!-- Heading -->
+                            <h2 class="rag-heading">AI Analytics Assistant</h2>
+
+                            <!-- Search Bar -->
+                            <div class="rag-search-wrapper">
+                                <input type="text"
+                                       id="rag-query-input"
+                                       class="rag-search-input"
+                                       placeholder="Ask about your analytics data...">
+                                <button id="rag-search-btn" class="rag-search-btn">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="11" cy="11" r="8"/>
+                                        <path d="M21 21l-4.35-4.35"/>
+                                    </svg>
+                                </button>
                             </div>
 
-                            <!-- Chat Input Area -->
-                            <div class="chat-input-container">
-                                <div class="chat-input-wrapper">
-                                    <textarea id="rag-query-input"
-                                              placeholder="Type your question here..."
-                                              class="chat-input"
-                                              rows="1"></textarea>
-                                    <button id="rag-search-btn" class="chat-send-btn" title="Send message">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-                                        </svg>
-                                    </button>
-                                </div>
-                                <div class="chat-status" id="chat-status"></div>
-                            </div>
+                            <!-- Response Area -->
+                            <div class="rag-response" id="rag-response"></div>
                         </div>
                     </section>
                 </div>

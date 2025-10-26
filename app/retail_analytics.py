@@ -6,7 +6,7 @@ Handles trajectory tracking, dwell time, occupancy, heatmaps, line crossing, and
 import numpy as np
 import cv2
 from typing import Dict, List, Tuple, Optional, Set
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from collections import defaultdict
 from scipy.ndimage import gaussian_filter
 from sqlalchemy.orm import Session
@@ -191,7 +191,7 @@ class DwellTimeCalculator:
             return None
 
         entry_time = self.zone_entries[key]['entry_time']
-        return (datetime.utcnow() - entry_time).total_seconds()
+        return (datetime.now(UTC) - entry_time).total_seconds()
 
 
 class ZoneDetector:
@@ -477,7 +477,7 @@ class HeatmapGenerator:
             time_bucket=time_bucket,
             heatmap_array=pickle.dumps(self.heat_grid),
             max_intensity=float(self.heat_grid.max()),
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         )
         db.add(heatmap_data)
         db.commit()
