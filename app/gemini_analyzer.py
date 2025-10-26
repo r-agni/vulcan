@@ -3,10 +3,10 @@ from google.genai import types
 import os
 import json
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session
-from database import BehaviorAnalysis
+from database import BehaviorAnalysis, SceneAnalysis, EventLog, InteractionLog
 import cv2
 
 
@@ -776,6 +776,387 @@ class GeminiAnalyzer:
         except Exception as e:
             print(f"Error analyzing video segment: {e}")
             return {"error": str(e)}
+
+    # ==================== COMPREHENSIVE STRUCTURED ANALYSIS ====================
+
+    def analyze_comprehensive_structured(
+        self,
+        video_path: str = None,
+        youtube_url: str = None,
+        detected_bodies: List[Dict] = None,
+        zones: List[Dict] = None,
+        time_window_seconds: int = 10
+    ) -> Dict:
+        """
+        Comprehensive structured analysis of video scene
+        Returns nested JSON with scene-level, individual-level, and zone-level analysis
+
+        Args:
+            video_path: Path to local video file
+            youtube_url: YouTube URL (preferred for faster processing)
+            detected_bodies: List of detected bodies with tracking info
+                            [{"tracking_id": "track_001", "bbox": [...], "person_id": 5, "zone": "Electronics"}]
+            zones: List of zone definitions for context
+            time_window_seconds: Duration of analysis window
+
+        Returns:
+            Structured dictionary with comprehensive analysis
+        """
+        try:
+            import time
+
+            # Prepare video input
+            video_metadata = None
+            if youtube_url:
+                print(f"Analyzing YouTube URL: {youtube_url}")
+                video_part = types.Part(
+                    file_data=types.FileData(file_uri=youtube_url)
+                )
+            elif video_path:
+                print(f"Uploading video file: {video_path}")
+                video_file = self.client.files.upload(file=video_path)
+
+                # Wait for file to become active
+                max_retries = 10
+                for retry in range(max_retries):
+                    file_status = self.client.files.get(name=video_file.name)
+                    if file_status.state.name == "ACTIVE":
+                        break
+                    if retry < max_retries - 1:
+                        time.sleep(2)
+
+                video_part = video_file
+            else:
+                return {"error": "Must provide either video_path or youtube_url"}
+
+            # Build context about detected bodies
+            body_context = ""
+            if detected_bodies:
+                body_context = "\n\nDETECTED INDIVIDUALS IN FRAME:\n"
+                for body in detected_bodies:
+                    tracking_id = body.get('tracking_id', 'unknown')
+                    person_id = body.get('person_id')
+                    zone = body.get('zone', 'unknown zone')
+                    person_info = f"Person #{person_id}" if person_id else "Unknown person"
+                    body_context += f"- Tracking ID: {tracking_id} ({person_info}) in {zone}\n"
+
+            # Build context about zones
+            zone_context = ""
+            if zones:
+                zone_context = "\n\nSTORE ZONES:\n"
+                for zone in zones:
+                    zone_name = zone.get('name', 'Unknown')
+                    zone_type = zone.get('type', 'unknown')
+                    zone_context += f"- {zone_name} ({zone_type})\n"
+
+            # Create comprehensive structured prompt
+            prompt = f"""
+            Analyze this {time_window_seconds}-second surveillance video clip and provide a COMPREHENSIVE STRUCTURED ANALYSIS.
+
+            {body_context}
+            {zone_context}
+
+            You MUST respond with VALID JSON in this EXACT structure (no additional text, no markdown):
+
+            {{
+              "analysis_timestamp": "2025-10-19T14:30:00Z",
+              "time_window": {{"start": "00:00", "end": "00:{time_window_seconds:02d}"}},
+
+              "scene": {{
+                "overall_summary": "Detailed description of overall scene activity...",
+                "crowd_density": "low|medium|high",
+                "energy_level": "calm|moderate|busy|hectic",
+                "dominant_activities": ["activity1", "activity2"],
+                "environmental_context": "Description of environment, lighting, ambiance...",
+                "anomalies_detected": []
+              }},
+
+              "events": [
+                {{
+                  "timestamp": "MM:SS",
+                  "event_type": "customer_interaction|staff_interaction|queue_formation|product_pickup|movement|anomaly",
+                  "severity": "normal|attention|warning|critical",
+                  "description": "What happened",
+                  "location": "Zone or area name",
+                  "involved_tracking_ids": ["track_XXX"],
+                  "requires_action": false,
+                  "recommended_action": null
+                }}
+              ],
+
+              "individuals": [
+                {{
+                  "body_tracking_id": "track_XXX",
+                  "person_id": null,
+                  "appearance": {{
+                    "clothing": "Detailed clothing description",
+                    "accessories": "Items carried, worn",
+                    "age_estimate": "XX-XX",
+                    "gender_estimate": "male|female|unknown",
+                    "distinctive_features": "Notable physical characteristics"
+                  }},
+                  "current_state": {{
+                    "activity": "What they're doing",
+                    "emotional_state": "Mood, demeanor",
+                    "confidence_level": "Body language confidence",
+                    "engagement_score": 0-10,
+                    "purchase_intent_score": 0-10
+                  }},
+                  "location": {{
+                    "current_zone": "Zone name",
+                    "sub_location": "Specific area within zone",
+                    "position_description": "Where exactly they are"
+                  }},
+                  "timeline_in_clip": [
+                    {{"time": "MM:SS", "action": "What happened at this time"}}
+                  ],
+                  "interactions": [
+                    {{
+                      "type": "product|staff|customer|environment",
+                      "item": "What they interacted with",
+                      "duration": "Duration estimate",
+                      "intensity": "low|medium|high"
+                    }}
+                  ],
+                  "needs_assistance": true|false,
+                  "recommended_action": "Action for staff to take, if any"
+                }}
+              ],
+
+              "zones": {{
+                "ZoneName": {{
+                  "occupancy": 0,
+                  "activity_level": "low|medium|high",
+                  "dominant_behavior": "Primary activity",
+                  "customer_engagement": "Description of engagement",
+                  "staff_presence": true|false,
+                  "recommended_action": "Suggestions for optimization"
+                }}
+              }},
+
+              "interactions": [
+                {{
+                  "interaction_id": "int_XXX",
+                  "type": "customer_product|customer_staff|customer_customer",
+                  "participants": ["track_XXX", "track_YYY"],
+                  "location": "Zone name",
+                  "description": "What's happening",
+                  "duration": "Estimate",
+                  "outcome": "ongoing|positive|negative|neutral"
+                }}
+              ],
+
+              "alerts": [
+                {{
+                  "alert_id": "alert_XXX",
+                  "priority": "low|medium|high|critical",
+                  "type": "sales_opportunity|queue_management|customer_service|security",
+                  "title": "Short alert title",
+                  "message": "Detailed alert message",
+                  "location": "Where",
+                  "recommended_recipient": "sales_staff|manager|security",
+                  "expiry_seconds": 300
+                }}
+              ],
+
+              "metadata": {{
+                "gemini_model": "gemini-2.5-flash",
+                "confidence_score": 0.0-1.0,
+                "frame_quality": "poor|fair|good|excellent",
+                "lighting_conditions": "Description"
+              }}
+            }}
+
+            IMPORTANT RULES:
+            1. Return ONLY the JSON object, no markdown, no code blocks, no extra text
+            2. Use the tracking IDs provided in the detected individuals list
+            3. Be specific and detailed in all descriptions
+            4. Include timestamps in MM:SS format for all events
+            5. Provide actionable insights in recommended_action fields
+            6. Score engagement and purchase intent objectively (0-10)
+            7. Identify all visible interactions between people, products, staff
+            8. Note any unusual behaviors or patterns
+            9. Make zone-specific observations for each active zone
+            10. Generate relevant alerts based on what you observe
+
+            Begin your JSON response now:
+            """
+
+            # Call Gemini API
+            response = self.client.models.generate_content(
+                model=self.model,
+                contents=[video_part, prompt]
+            )
+
+            # Parse JSON response
+            response_text = response.text.strip()
+
+            # Try to extract JSON from response (remove markdown code blocks if present)
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if json_match:
+                response_text = json_match.group(1)
+            elif response_text.startswith('```') and response_text.endswith('```'):
+                response_text = response_text.strip('`').strip()
+                if response_text.startswith('json'):
+                    response_text = response_text[4:].strip()
+
+            # Parse JSON
+            structured_data = json.loads(response_text)
+
+            return {
+                "success": True,
+                "structured_analysis": structured_data,
+                "raw_response": response.text,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+        except json.JSONDecodeError as e:
+            print(f"Error parsing Gemini JSON response: {e}")
+            print(f"Raw response: {response.text if 'response' in locals() else 'No response'}")
+            return {
+                "success": False,
+                "error": f"JSON parsing error: {str(e)}",
+                "raw_response": response.text if 'response' in locals() else None
+            }
+        except Exception as e:
+            print(f"Error in comprehensive analysis: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def save_comprehensive_analysis_to_db(
+        self,
+        db: Session,
+        analysis_result: Dict,
+        video_clip_path: Optional[str] = None
+    ) -> Optional[SceneAnalysis]:
+        """
+        Save comprehensive structured analysis to database
+
+        Args:
+            db: Database session
+            analysis_result: Result from analyze_comprehensive_structured()
+            video_clip_path: Path to video clip
+
+        Returns:
+            SceneAnalysis record or None if error
+        """
+        if not analysis_result.get('success'):
+            print(f"Cannot save failed analysis: {analysis_result.get('error')}")
+            return None
+
+        try:
+            structured_data = analysis_result['structured_analysis']
+            scene_data = structured_data.get('scene', {})
+            metadata = structured_data.get('metadata', {})
+            time_window = structured_data.get('time_window', {})
+
+            # Create SceneAnalysis record
+            scene_analysis = SceneAnalysis(
+                timestamp=datetime.utcnow(),
+                time_window_start=time_window.get('start', '00:00'),
+                time_window_end=time_window.get('end', '00:10'),
+                video_clip_path=video_clip_path,
+                overall_summary=scene_data.get('overall_summary', ''),
+                crowd_density=scene_data.get('crowd_density', 'unknown'),
+                energy_level=scene_data.get('energy_level', 'unknown'),
+                dominant_activities=scene_data.get('dominant_activities', []),
+                environmental_context=scene_data.get('environmental_context'),
+                anomalies_detected=scene_data.get('anomalies_detected', []),
+                gemini_model=metadata.get('gemini_model', 'gemini-2.5-flash'),
+                confidence_score=metadata.get('confidence_score'),
+                full_structured_response=structured_data
+            )
+
+            db.add(scene_analysis)
+            db.commit()
+            db.refresh(scene_analysis)
+
+            # Save events
+            for event_data in structured_data.get('events', []):
+                event = EventLog(
+                    scene_analysis_id=scene_analysis.id,
+                    video_timestamp=event_data.get('timestamp', '00:00'),
+                    event_type=event_data.get('event_type', 'unknown'),
+                    severity=event_data.get('severity', 'normal'),
+                    description=event_data.get('description', ''),
+                    location=event_data.get('location', ''),
+                    involved_tracking_ids=event_data.get('involved_tracking_ids', []),
+                    requires_action=event_data.get('requires_action', False),
+                    recommended_action=event_data.get('recommended_action')
+                )
+                db.add(event)
+
+            # Save interactions
+            for interaction_data in structured_data.get('interactions', []):
+                interaction = InteractionLog(
+                    scene_analysis_id=scene_analysis.id,
+                    interaction_type=interaction_data.get('type', 'unknown'),
+                    participants=interaction_data.get('participants', []),
+                    location=interaction_data.get('location', ''),
+                    description=interaction_data.get('description', ''),
+                    duration_seconds=self._parse_duration(interaction_data.get('duration')),
+                    outcome=interaction_data.get('outcome')
+                )
+                db.add(interaction)
+
+            # Save individual behavior analyses
+            for individual_data in structured_data.get('individuals', []):
+                tracking_id = individual_data.get('body_tracking_id')
+                person_id = individual_data.get('person_id')
+
+                behavior = BehaviorAnalysis(
+                    person_id=person_id,
+                    body_tracking_id=tracking_id,
+                    scene_analysis_id=scene_analysis.id,
+                    detection_event_id=None,  # Will be linked separately if needed
+                    analysis_type='comprehensive_individual',
+                    analysis_text=json.dumps(individual_data, indent=2),
+                    video_clip_path=video_clip_path,
+                    structured_data=individual_data
+                )
+                db.add(behavior)
+
+            db.commit()
+
+            print(f"✅ Saved comprehensive analysis to database (Scene ID: {scene_analysis.id})")
+            return scene_analysis
+
+        except Exception as e:
+            print(f"Error saving comprehensive analysis to DB: {e}")
+            import traceback
+            traceback.print_exc()
+            db.rollback()
+            return None
+
+    def _parse_duration(self, duration_str: Optional[str]) -> Optional[float]:
+        """Parse duration string like '45s' or '2m30s' into seconds"""
+        if not duration_str:
+            return None
+
+        try:
+            # Simple parsing for common formats
+            duration_str = duration_str.lower().strip()
+
+            # Just seconds: "45s"
+            if duration_str.endswith('s') and 'm' not in duration_str:
+                return float(duration_str[:-1])
+
+            # Minutes and seconds: "2m30s"
+            if 'm' in duration_str:
+                parts = duration_str.split('m')
+                minutes = float(parts[0])
+                seconds = float(parts[1].rstrip('s')) if len(parts) > 1 and parts[1] else 0
+                return minutes * 60 + seconds
+
+            # Try to parse as number
+            return float(duration_str)
+
+        except:
+            return None
 
     # ==================== LAYOUT ZONE GENERATION ====================
 

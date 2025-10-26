@@ -1,11 +1,12 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from pydantic import BaseModel
 import asyncio
 import json
 import cv2
 import os
-from typing import List
+from typing import List, Optional
 from datetime import datetime, UTC
 import threading
 
@@ -27,6 +28,9 @@ from Agent import AlertGenerator, AlertManager
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rag.rag_api import create_rag_router
 
+# Import Staff Location Tracker
+from staff_location_tracker import router as staff_location_router
+
 load_dotenv()
 
 # Initialize FastAPI app
@@ -35,6 +39,9 @@ app = FastAPI(title="Video AI Surveillance System")
 # Add RAG router
 rag_router = create_rag_router()
 app.include_router(rag_router)
+
+# Add Staff Location Tracker router
+app.include_router(staff_location_router)
 
 # Initialize components
 camera = CameraManager(camera_source="https://www.youtube.com/watch?v=KMJS66jBtVQ")
@@ -736,6 +743,619 @@ async def dismiss_alert(alert_id: str):
 async def get_alert_statistics():
     """Get alert statistics"""
     return alert_manager.get_alert_statistics()
+
+
+# ==================== MANUAL OBSERVATION & TIMELINE APIs ====================
+
+# Pydantic models for request bodies
+class ManualObservationCreate(BaseModel):
+    observation_type: str  # note, issue, feedback, action_taken
+    title: Optional[str] = None
+    description: str
+    severity: str = "info"  # info, warning, critical
+    recorded_by: Optional[str] = "staff"
+    requires_followup: bool = False
+
+
+from database import (
+    SessionLocal, ManualObservation, Person, BodyDetectionEvent,
+    PersonSession, BehaviorAnalysis, SceneAnalysis, EventLog
+)
+
+
+def get_db():
+    """Get database session"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@app.post("/api/observations/person/{person_id}")
+async def create_person_observation(person_id: int, observation: ManualObservationCreate):
+    """Add a manual observation for a specific person"""
+    db = SessionLocal()
+    try:
+        # Check if person exists
+        person = db.query(Person).filter(Person.id == person_id).first()
+        if not person:
+            raise HTTPException(status_code=404, detail=f"Person {person_id} not found")
+
+        # Create observation
+        db_observation = ManualObservation(
+            person_id=person_id,
+            observation_type=observation.observation_type,
+            title=observation.title,
+            description=observation.description,
+            severity=observation.severity,
+            recorded_by=observation.recorded_by,
+            requires_followup=observation.requires_followup,
+            timestamp=datetime.utcnow()
+        )
+
+        db.add(db_observation)
+        db.commit()
+        db.refresh(db_observation)
+
+        log_activity(f"📝 Manual observation added for Person #{person_id}: {observation.title or observation.description[:50]}", "system")
+
+        return {
+            "success": True,
+            "observation_id": db_observation.id,
+            "message": f"Observation added for Person #{person_id}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/api/observations/tracking/{tracking_id}")
+async def create_tracking_observation(tracking_id: str, observation: ManualObservationCreate):
+    """Add a manual observation for a specific body tracking ID"""
+    db = SessionLocal()
+    try:
+        # Check if tracking ID exists
+        session = db.query(PersonSession).filter(
+            PersonSession.body_tracking_id == tracking_id
+        ).first()
+
+        if not session:
+            raise HTTPException(status_code=404, detail=f"Tracking ID {tracking_id} not found")
+
+        # Create observation
+        db_observation = ManualObservation(
+            body_tracking_id=tracking_id,
+            person_id=session.person_id,  # Link to person if known
+            observation_type=observation.observation_type,
+            title=observation.title,
+            description=observation.description,
+            severity=observation.severity,
+            recorded_by=observation.recorded_by,
+            requires_followup=observation.requires_followup,
+            timestamp=datetime.utcnow()
+        )
+
+        db.add(db_observation)
+        db.commit()
+        db.refresh(db_observation)
+
+        log_activity(f"📝 Manual observation added for tracking {tracking_id}: {observation.title or observation.description[:50]}", "system")
+
+        return {
+            "success": True,
+            "observation_id": db_observation.id,
+            "message": f"Observation added for tracking ID {tracking_id}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/api/person/{person_id}/timeline")
+async def get_person_timeline(person_id: int):
+    """Get complete timeline for a person: detections, body tracking, analyses, observations"""
+    db = SessionLocal()
+    try:
+        # Check if person exists
+        person = db.query(Person).filter(Person.id == person_id).first()
+        if not person:
+            raise HTTPException(status_code=404, detail=f"Person {person_id} not found")
+
+        # Get all body detection events for this person
+        body_detections = db.query(BodyDetectionEvent).filter(
+            BodyDetectionEvent.person_id == person_id
+        ).order_by(BodyDetectionEvent.timestamp.desc()).limit(100).all()
+
+        # Get all person sessions
+        sessions = db.query(PersonSession).filter(
+            PersonSession.person_id == person_id
+        ).order_by(PersonSession.session_start.desc()).all()
+
+        # Get all behavior analyses
+        analyses = db.query(BehaviorAnalysis).filter(
+            BehaviorAnalysis.person_id == person_id
+        ).order_by(BehaviorAnalysis.timestamp.desc()).all()
+
+        # Get all manual observations
+        observations = db.query(ManualObservation).filter(
+            ManualObservation.person_id == person_id
+        ).order_by(ManualObservation.timestamp.desc()).all()
+
+        # Build timeline response
+        timeline = {
+            "person": {
+                "id": person.id,
+                "name": person.name,
+                "first_seen": person.first_seen.isoformat() if person.first_seen else None,
+                "last_seen": person.last_seen.isoformat() if person.last_seen else None,
+                "visit_count": person.visit_count,
+                "thumbnail_path": person.thumbnail_path
+            },
+            "sessions": [
+                {
+                    "id": s.id,
+                    "tracking_id": s.body_tracking_id,
+                    "start": s.session_start.isoformat() if s.session_start else None,
+                    "end": s.session_end.isoformat() if s.session_end else None,
+                    "is_active": s.is_active,
+                    "zones_visited": s.zones_visited,
+                    "total_detections": s.total_detections
+                }
+                for s in sessions
+            ],
+            "recent_detections": [
+                {
+                    "id": d.id,
+                    "tracking_id": d.body_tracking_id,
+                    "timestamp": d.timestamp.isoformat() if d.timestamp else None,
+                    "confidence": d.confidence,
+                    "zone_id": d.zone_id
+                }
+                for d in body_detections
+            ],
+            "analyses": [
+                {
+                    "id": a.id,
+                    "timestamp": a.timestamp.isoformat() if a.timestamp else None,
+                    "type": a.analysis_type,
+                    "tracking_id": a.body_tracking_id,
+                    "text": a.analysis_text,
+                    "structured_data": a.structured_data
+                }
+                for a in analyses
+            ],
+            "observations": [
+                {
+                    "id": o.id,
+                    "timestamp": o.timestamp.isoformat() if o.timestamp else None,
+                    "type": o.observation_type,
+                    "title": o.title,
+                    "description": o.description,
+                    "severity": o.severity,
+                    "recorded_by": o.recorded_by,
+                    "tracking_id": o.body_tracking_id
+                }
+                for o in observations
+            ]
+        }
+
+        return timeline
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/api/tracking/{tracking_id}/timeline")
+async def get_tracking_timeline(tracking_id: str):
+    """Get timeline for a specific body tracking ID (for unknown persons)"""
+    db = SessionLocal()
+    try:
+        # Get session for this tracking ID
+        session = db.query(PersonSession).filter(
+            PersonSession.body_tracking_id == tracking_id
+        ).first()
+
+        if not session:
+            raise HTTPException(status_code=404, detail=f"Tracking ID {tracking_id} not found")
+
+        # Get all body detection events
+        body_detections = db.query(BodyDetectionEvent).filter(
+            BodyDetectionEvent.body_tracking_id == tracking_id
+        ).order_by(BodyDetectionEvent.timestamp.desc()).all()
+
+        # Get all behavior analyses
+        analyses = db.query(BehaviorAnalysis).filter(
+            BehaviorAnalysis.body_tracking_id == tracking_id
+        ).order_by(BehaviorAnalysis.timestamp.desc()).all()
+
+        # Get all manual observations
+        observations = db.query(ManualObservation).filter(
+            ManualObservation.body_tracking_id == tracking_id
+        ).order_by(ManualObservation.timestamp.desc()).all()
+
+        # Build timeline response
+        timeline = {
+            "tracking_id": tracking_id,
+            "person_id": session.person_id,
+            "session": {
+                "id": session.id,
+                "start": session.session_start.isoformat() if session.session_start else None,
+                "end": session.session_end.isoformat() if session.session_end else None,
+                "is_active": session.is_active,
+                "zones_visited": session.zones_visited,
+                "total_detections": session.total_detections
+            },
+            "detections": [
+                {
+                    "id": d.id,
+                    "timestamp": d.timestamp.isoformat() if d.timestamp else None,
+                    "confidence": d.confidence,
+                    "zone_id": d.zone_id,
+                    "bbox": {
+                        "left": d.bbox_left,
+                        "top": d.bbox_top,
+                        "right": d.bbox_right,
+                        "bottom": d.bbox_bottom
+                    }
+                }
+                for d in body_detections
+            ],
+            "analyses": [
+                {
+                    "id": a.id,
+                    "timestamp": a.timestamp.isoformat() if a.timestamp else None,
+                    "type": a.analysis_type,
+                    "text": a.analysis_text,
+                    "structured_data": a.structured_data
+                }
+                for a in analyses
+            ],
+            "observations": [
+                {
+                    "id": o.id,
+                    "timestamp": o.timestamp.isoformat() if o.timestamp else None,
+                    "type": o.observation_type,
+                    "title": o.title,
+                    "description": o.description,
+                    "severity": o.severity,
+                    "recorded_by": o.recorded_by
+                }
+                for o in observations
+            ]
+        }
+
+        return timeline
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/api/scene/timeline")
+async def get_scene_timeline(start: Optional[str] = None, end: Optional[str] = None, limit: int = 50):
+    """Get scene analyses and events within a time range"""
+    db = SessionLocal()
+    try:
+        query = db.query(SceneAnalysis)
+
+        # Apply time filters if provided
+        if start:
+            try:
+                start_dt = datetime.fromisoformat(start)
+                query = query.filter(SceneAnalysis.timestamp >= start_dt)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid start datetime format")
+
+        if end:
+            try:
+                end_dt = datetime.fromisoformat(end)
+                query = query.filter(SceneAnalysis.timestamp <= end_dt)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid end datetime format")
+
+        # Order by timestamp descending and limit
+        scene_analyses = query.order_by(SceneAnalysis.timestamp.desc()).limit(limit).all()
+
+        # Build response
+        timeline = []
+        for scene in scene_analyses:
+            # Get associated events
+            events = db.query(EventLog).filter(
+                EventLog.scene_analysis_id == scene.id
+            ).all()
+
+            timeline.append({
+                "scene_id": scene.id,
+                "timestamp": scene.timestamp.isoformat() if scene.timestamp else None,
+                "time_window": {
+                    "start": scene.time_window_start,
+                    "end": scene.time_window_end
+                },
+                "scene": {
+                    "summary": scene.overall_summary,
+                    "crowd_density": scene.crowd_density,
+                    "energy_level": scene.energy_level,
+                    "dominant_activities": scene.dominant_activities
+                },
+                "events": [
+                    {
+                        "id": e.id,
+                        "timestamp": e.video_timestamp,
+                        "type": e.event_type,
+                        "severity": e.severity,
+                        "description": e.description,
+                        "location": e.location,
+                        "involved_tracking_ids": e.involved_tracking_ids,
+                        "requires_action": e.requires_action
+                    }
+                    for e in events
+                ],
+                "video_clip_path": scene.video_clip_path
+            })
+
+        return {
+            "count": len(timeline),
+            "timeline": timeline
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+# ==================== STAFF MANAGEMENT ENDPOINTS ====================
+
+@app.post("/api/staff/clock-in")
+async def staff_clock_in(employee_id: str):
+    """Staff member clocks in for shift"""
+    db = SessionLocal()
+    try:
+        from database import StaffMember
+        staff = db.query(StaffMember).filter(
+            StaffMember.employee_id == employee_id
+        ).first()
+
+        if not staff:
+            raise HTTPException(status_code=404, detail="Staff not found")
+
+        staff.is_on_duty = True
+        staff.shift_start = datetime.now(UTC)
+        db.commit()
+
+        log_activity(f"👤 {staff.name} clocked in", "system")
+
+        return {"success": True, "staff": staff.name, "shift_start": staff.shift_start.isoformat()}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/api/staff/clock-out")
+async def staff_clock_out(employee_id: str):
+    """Staff member clocks out from shift"""
+    db = SessionLocal()
+    try:
+        from database import StaffMember
+        staff = db.query(StaffMember).filter(
+            StaffMember.employee_id == employee_id
+        ).first()
+
+        if not staff:
+            raise HTTPException(status_code=404, detail="Staff not found")
+
+        staff.is_on_duty = False
+        staff.shift_end = datetime.now(UTC)
+        db.commit()
+
+        log_activity(f"👤 {staff.name} clocked out", "system")
+
+        return {"success": True, "staff": staff.name}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/api/staff/assignments/{staff_id}")
+async def get_staff_assignments(staff_id: int):
+    """Get active assignments for staff member"""
+    db = SessionLocal()
+    try:
+        from database import AlertAssignment
+        assignments = db.query(AlertAssignment).filter(
+            AlertAssignment.staff_id == staff_id,
+            AlertAssignment.completed_at == None
+        ).all()
+
+        return [
+            {
+                "alert_id": a.alert_id,
+                "assigned_at": a.assigned_at.isoformat(),
+                "time_elapsed": (datetime.now(UTC) - a.assigned_at).seconds
+            }
+            for a in assignments
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/api/staff/assignment/{alert_id}/complete")
+async def complete_assignment(alert_id: str, outcome: str = "success", notes: str = None):
+    """Mark alert assignment as complete"""
+    db = SessionLocal()
+    try:
+        from Agent.staff_coordinator import StaffCoordinator
+        staff_coordinator = StaffCoordinator(api_key=os.getenv("GEMINI_API_KEY"))
+
+        staff_coordinator.track_assignment_outcome(
+            db, alert_id, outcome, staff_notes=notes
+        )
+
+        return {"success": True, "outcome": outcome}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/api/staff/list")
+async def list_staff():
+    """Get list of all staff members"""
+    db = SessionLocal()
+    try:
+        from database import StaffMember
+        staff = db.query(StaffMember).all()
+
+        return [
+            {
+                "id": s.id,
+                "employee_id": s.employee_id,
+                "name": s.name,
+                "role": s.role,
+                "is_on_duty": s.is_on_duty,
+                "shift_start": s.shift_start.isoformat() if s.shift_start else None,
+                "shift_end": s.shift_end.isoformat() if s.shift_end else None
+            }
+            for s in staff
+        ]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+# ==================== CUSTOMER RECOGNITION ENDPOINTS ====================
+
+@app.get("/api/customers/profile/{profile_uuid}")
+async def get_customer_profile(profile_uuid: str):
+    """Get customer profile insights (privacy-compliant)"""
+    db = SessionLocal()
+    try:
+        from database import CustomerProfile
+        from customer_recognition import CustomerRecognitionAgent
+
+        profile = db.query(CustomerProfile).filter(
+            CustomerProfile.profile_uuid == profile_uuid
+        ).first()
+
+        if not profile or profile.opt_out_date:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        # Initialize recognition agent
+        customer_recognition = CustomerRecognitionAgent(enabled=True)
+
+        insights = customer_recognition.get_customer_insights(db, profile.id)
+
+        return insights
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/api/customers/opt-out/{profile_uuid}")
+async def customer_opt_out(profile_uuid: str):
+    """Handle customer opt-out request (GDPR compliance)"""
+    db = SessionLocal()
+    try:
+        from database import CustomerProfile
+        profile = db.query(CustomerProfile).filter(
+            CustomerProfile.profile_uuid == profile_uuid
+        ).first()
+
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        # Mark for deletion
+        profile.opt_out_date = datetime.now(UTC)
+        profile.appearance_embedding = None  # Clear embedding
+        profile.data_retention_expires = datetime.now(UTC) + timedelta(days=30)
+
+        db.commit()
+
+        log_activity(f"🔒 Customer profile {profile_uuid} opted out (GDPR)", "system")
+
+        return {"success": True, "message": "Profile will be deleted in 30 days"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/api/customers/stats")
+async def get_customer_stats():
+    """Get customer recognition statistics"""
+    db = SessionLocal()
+    try:
+        from database import CustomerProfile, CustomerVisit
+        total_profiles = db.query(CustomerProfile).filter(
+            CustomerProfile.opt_out_date == None
+        ).count()
+
+        vip_count = db.query(CustomerProfile).filter(
+            CustomerProfile.vip_status == True,
+            CustomerProfile.opt_out_date == None
+        ).count()
+
+        total_visits = db.query(CustomerVisit).count()
+
+        # Recent visitors (last 7 days)
+        recent_cutoff = datetime.now(UTC) - timedelta(days=7)
+        recent_visitors = db.query(CustomerProfile).filter(
+            CustomerProfile.last_visit >= recent_cutoff,
+            CustomerProfile.opt_out_date == None
+        ).count()
+
+        return {
+            "total_profiles": total_profiles,
+            "vip_customers": vip_count,
+            "total_visits": total_visits,
+            "recent_visitors_7d": recent_visitors
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -20,25 +20,27 @@ from database import (
 
 
 class TrajectoryTracker:
-    """Track person movement paths"""
+    """Track person movement paths using tracking_id"""
 
     def __init__(self, history_duration_seconds: int = 30):
-        self.active_trajectories: Dict[int, List[Dict]] = {}  # {person_id: [points]}
-        self.session_ids: Dict[int, str] = {}  # {person_id: session_uuid}
+        self.active_trajectories: Dict[str, List[Dict]] = {}  # {tracking_id: [points]}
+        self.session_ids: Dict[str, str] = {}  # {tracking_id: session_uuid}
+        self.tracking_to_person: Dict[str, Optional[int]] = {}  # {tracking_id: person_id}
         self.history_duration = history_duration_seconds
 
     def update_position(
         self,
-        person_id: int,
+        tracking_id: str,
+        person_id: Optional[int],
         bbox: Tuple[int, int, int, int],
         timestamp: datetime,
         frame_width: int,
         frame_height: int,
         current_zone_id: Optional[int] = None
     ):
-        """Update person's position in trajectory"""
+        """Update tracked body's position in trajectory"""
         # Calculate centroid from bounding box
-        top, right, bottom, left = bbox
+        left, top, right, bottom = bbox
         centroid_x = (left + right) / 2
         centroid_y = (top + bottom) / 2
 
@@ -47,50 +49,58 @@ class TrajectoryTracker:
         norm_y = centroid_y / frame_height
 
         # Create or get session ID
-        if person_id not in self.session_ids:
-            self.session_ids[person_id] = str(uuid.uuid4())
+        if tracking_id not in self.session_ids:
+            self.session_ids[tracking_id] = str(uuid.uuid4())
+
+        # Update person_id mapping
+        if person_id is not None:
+            self.tracking_to_person[tracking_id] = person_id
 
         # Add to trajectory
-        if person_id not in self.active_trajectories:
-            self.active_trajectories[person_id] = []
+        if tracking_id not in self.active_trajectories:
+            self.active_trajectories[tracking_id] = []
 
         point = {
             'x': norm_x,
             'y': norm_y,
             'timestamp': timestamp,
-            'zone_id': current_zone_id
+            'zone_id': current_zone_id,
+            'person_id': person_id
         }
-        self.active_trajectories[person_id].append(point)
+        self.active_trajectories[tracking_id].append(point)
 
         # Clean old points
-        self._clean_old_points(person_id, timestamp)
+        self._clean_old_points(tracking_id, timestamp)
 
         return norm_x, norm_y
 
-    def _clean_old_points(self, person_id: int, current_time: datetime):
+    def _clean_old_points(self, tracking_id: str, current_time: datetime):
         """Remove trajectory points older than history duration"""
-        if person_id not in self.active_trajectories:
+        if tracking_id not in self.active_trajectories:
             return
 
         cutoff_time = current_time - timedelta(seconds=self.history_duration)
-        self.active_trajectories[person_id] = [
-            point for point in self.active_trajectories[person_id]
+        self.active_trajectories[tracking_id] = [
+            point for point in self.active_trajectories[tracking_id]
             if point['timestamp'] > cutoff_time
         ]
 
-    def get_path(self, person_id: int) -> List[Dict]:
-        """Get trajectory path for a person"""
-        return self.active_trajectories.get(person_id, [])
+    def get_path(self, tracking_id: str) -> List[Dict]:
+        """Get trajectory path for a tracking ID"""
+        return self.active_trajectories.get(tracking_id, [])
 
-    def save_to_db(self, db: Session, person_id: int):
+    def save_to_db(self, db: Session, tracking_id: str):
         """Save trajectory to database"""
-        if person_id not in self.active_trajectories:
+        if tracking_id not in self.active_trajectories:
             return
 
-        session_id = self.session_ids.get(person_id)
-        for point in self.active_trajectories[person_id]:
+        session_id = self.session_ids.get(tracking_id)
+        person_id = self.tracking_to_person.get(tracking_id)
+
+        for point in self.active_trajectories[tracking_id]:
             trajectory = PersonTrajectory(
-                person_id=person_id,
+                person_id=person_id or point.get('person_id'),
+                body_tracking_id=tracking_id,
                 session_id=session_id,
                 timestamp=point['timestamp'],
                 x_position=point['x'],
@@ -101,25 +111,29 @@ class TrajectoryTracker:
 
         db.commit()
 
-    def end_session(self, person_id: int):
-        """End tracking session for person"""
-        if person_id in self.active_trajectories:
-            del self.active_trajectories[person_id]
-        if person_id in self.session_ids:
-            del self.session_ids[person_id]
+    def end_session(self, tracking_id: str):
+        """End tracking session for tracking_id"""
+        if tracking_id in self.active_trajectories:
+            del self.active_trajectories[tracking_id]
+        if tracking_id in self.session_ids:
+            del self.session_ids[tracking_id]
+        if tracking_id in self.tracking_to_person:
+            del self.tracking_to_person[tracking_id]
 
 
 class DwellTimeCalculator:
-    """Calculate time spent in zones"""
+    """Calculate time spent in zones using tracking_id"""
 
     def __init__(self, stationary_threshold_meters: float = 0.5):
-        self.zone_entries: Dict[Tuple[int, int], Dict] = {}  # {(person_id, zone_id): data}
+        self.zone_entries: Dict[Tuple[str, int], Dict] = {}  # {(tracking_id, zone_id): data}
         self.stationary_threshold = stationary_threshold_meters
-        self.session_ids: Dict[int, str] = {}
+        self.session_ids: Dict[str, str] = {}  # {tracking_id: session_uuid}
+        self.tracking_to_person: Dict[str, Optional[int]] = {}  # {tracking_id: person_id}
 
     def update(
         self,
-        person_id: int,
+        tracking_id: str,
+        person_id: Optional[int],
         current_zone_id: Optional[int],
         position: Tuple[float, float],
         timestamp: datetime
@@ -129,17 +143,22 @@ class DwellTimeCalculator:
             return None
 
         # Get or create session ID
-        if person_id not in self.session_ids:
-            self.session_ids[person_id] = str(uuid.uuid4())
+        if tracking_id not in self.session_ids:
+            self.session_ids[tracking_id] = str(uuid.uuid4())
 
-        key = (person_id, current_zone_id)
+        # Update person_id mapping
+        if person_id is not None:
+            self.tracking_to_person[tracking_id] = person_id
+
+        key = (tracking_id, current_zone_id)
 
         # Check if entered new zone
         if key not in self.zone_entries:
             self.zone_entries[key] = {
                 'entry_time': timestamp,
                 'last_position': position,
-                'session_id': self.session_ids[person_id]
+                'session_id': self.session_ids[tracking_id],
+                'person_id': person_id
             }
             return 0
 
@@ -147,30 +166,35 @@ class DwellTimeCalculator:
         entry_data = self.zone_entries[key]
         dwell_duration = (timestamp - entry_data['entry_time']).total_seconds()
 
-        # Update last position
+        # Update last position and person_id
         entry_data['last_position'] = position
+        if person_id is not None:
+            entry_data['person_id'] = person_id
 
         return dwell_duration
 
     def exit_zone(
         self,
         db: Session,
-        person_id: int,
+        tracking_id: str,
         zone_id: int,
         exit_time: datetime,
         engagement_score: Optional[float] = None
     ):
         """Record zone exit and save to database"""
-        key = (person_id, zone_id)
+        key = (tracking_id, zone_id)
         if key not in self.zone_entries:
             return
 
         entry_data = self.zone_entries[key]
         duration = (exit_time - entry_data['entry_time']).total_seconds()
 
+        person_id = entry_data.get('person_id') or self.tracking_to_person.get(tracking_id)
+
         # Save to database
         dwell_record = DwellTimeRecord(
             person_id=person_id,
+            body_tracking_id=tracking_id,
             session_id=entry_data['session_id'],
             zone_id=zone_id,
             entry_time=entry_data['entry_time'],
@@ -184,9 +208,9 @@ class DwellTimeCalculator:
         # Remove from active tracking
         del self.zone_entries[key]
 
-    def get_current_dwell_time(self, person_id: int, zone_id: int) -> Optional[float]:
-        """Get current dwell time for person in zone"""
-        key = (person_id, zone_id)
+    def get_current_dwell_time(self, tracking_id: str, zone_id: int) -> Optional[float]:
+        """Get current dwell time for tracking_id in zone"""
+        key = (tracking_id, zone_id)
         if key not in self.zone_entries:
             return None
 
@@ -310,12 +334,13 @@ class OccupancyCounter:
 
 
 class LineCrossingDetector:
-    """Detect virtual line crossings"""
+    """Detect virtual line crossings using tracking_id"""
 
     def __init__(self):
         self.lines: List[Dict] = []
-        self.last_positions: Dict[int, Tuple[float, float]] = {}
-        self.crossing_counts: Dict[int, Dict[str, int]] = defaultdict(lambda: {'in': 0, 'out': 0})
+        self.last_positions: Dict[str, Tuple[float, float]] = {}  # {tracking_id: position}
+        self.tracking_to_person: Dict[str, Optional[int]] = {}  # {tracking_id: person_id}
+        self.crossing_counts: Dict[int, Dict[str, int]] = defaultdict(lambda: {'in': 0, 'out': 0, 'total': 0})
 
     def load_lines(self, db: Session):
         """Load virtual lines from database"""
@@ -345,16 +370,21 @@ class LineCrossingDetector:
 
     def check_crossing(
         self,
-        person_id: int,
+        tracking_id: str,
+        person_id: Optional[int],
         current_position: Tuple[float, float],
         timestamp: datetime
     ) -> Optional[Dict]:
-        """Check if person crossed any lines"""
-        if person_id not in self.last_positions:
-            self.last_positions[person_id] = current_position
+        """Check if tracked body crossed any lines"""
+        # Update person_id mapping
+        if person_id is not None:
+            self.tracking_to_person[tracking_id] = person_id
+
+        if tracking_id not in self.last_positions:
+            self.last_positions[tracking_id] = current_position
             return None
 
-        last_pos = self.last_positions[person_id]
+        last_pos = self.last_positions[tracking_id]
         crossing_event = None
 
         for line in self.lines:
@@ -367,15 +397,18 @@ class LineCrossingDetector:
 
             if crossed:
                 self.crossing_counts[line['id']][direction] += 1
+                self.crossing_counts[line['id']]['total'] += 1
                 crossing_event = {
                     'line_id': line['id'],
                     'line_name': line['name'],
                     'direction': direction,
-                    'point': current_position
+                    'point': current_position,
+                    'tracking_id': tracking_id,
+                    'person_id': person_id
                 }
                 break
 
-        self.last_positions[person_id] = current_position
+        self.last_positions[tracking_id] = current_position
         return crossing_event
 
     def _detect_line_intersection(
@@ -402,10 +435,14 @@ class LineCrossingDetector:
 
         return True, direction
 
-    def log_crossing(self, db: Session, person_id: int, crossing_event: Dict, timestamp: datetime):
+    def log_crossing(self, db: Session, crossing_event: Dict, timestamp: datetime):
         """Log crossing event to database"""
+        tracking_id = crossing_event.get('tracking_id')
+        person_id = crossing_event.get('person_id') or self.tracking_to_person.get(tracking_id)
+
         event = LineCrossingEvent(
             person_id=person_id,
+            body_tracking_id=tracking_id,
             line_id=crossing_event['line_id'],
             timestamp=timestamp,
             direction=crossing_event['direction'],

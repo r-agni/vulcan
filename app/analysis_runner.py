@@ -14,11 +14,12 @@ import numpy as np
 from sqlalchemy.orm import Session
 import time
 
-from app.database import init_db, get_db, Person, DetectionEvent, SessionLocal
+from app.database import init_db, get_db, Person, DetectionEvent, SessionLocal, BodyDetectionEvent, PersonSession
 from app.camera_manager import CameraManager
 from app.person_detector import PersonDetector
 from app.face_detector import FaceDetector
 from app.gemini_analyzer import GeminiAnalyzer
+from app.body_tracker import BodyTracker
 from app.retail_analytics import (
     TrajectoryTracker, DwellTimeCalculator, ZoneDetector,
     OccupancyCounter, LineCrossingDetector, HeatmapGenerator, QueueDetector
@@ -81,6 +82,7 @@ class ComprehensiveAnalysisRunner:
         self.person_detector = PersonDetector(confidence_threshold=0.7)
         self.face_detector = FaceDetector(tolerance=0.4)
         self.face_detector.load_known_faces_from_db(self.db)
+        self.body_tracker = BodyTracker(iou_threshold=0.3, max_age=30)
 
         # Initialize Gemini analyzer if enabled
         self.gemini_analyzer = None
@@ -311,17 +313,17 @@ class ComprehensiveAnalysisRunner:
 
     def process_frame(self, frame: np.ndarray, timestamp: datetime):
         """Process a single frame with all analysis components"""
-        
-        # Step 1: Detect persons
+
+        # Step 1: Detect persons (bodies)
         person_detections = self.person_detector.detect_persons(frame)
 
         if len(person_detections) == 0:
             return
 
-        # Current frame person positions (for occupancy and heatmap)
-        current_positions = {}
+        # Step 2: Prepare detections for body tracker (bbox, confidence, person_id)
+        # We'll try to recognize faces first, then update tracker
+        detections_with_person_ids = []
 
-        # Step 2: Process each detected person
         for person_bbox, person_confidence in person_detections:
             # Extract person ROI
             roi_frame, offset_xy = self.person_detector.extract_person_roi(
@@ -334,6 +336,7 @@ class ComprehensiveAnalysisRunner:
             )
 
             # Check for visible faces
+            person_id = None
             visible_faces = []
             for detection_result in detected_faces:
                 try:
@@ -345,9 +348,6 @@ class ComprehensiveAnalysisRunner:
                             visible_faces.append((face_encoding, face_location))
                 except Exception as e:
                     continue
-
-            person_id = None
-            person_data = None
 
             # Try to recognize face if visible
             if len(visible_faces) > 0:
@@ -365,65 +365,92 @@ class ComprehensiveAnalysisRunner:
                     )
                     person_id = person.id
 
-                person_data = {
-                    "id": person_id,
-                    "bbox": person_bbox,
-                    "confidence": person_confidence,
-                    "face_visible": True,
-                    "face_location": best_face_location
-                }
-
-                # Log detection event
+                # Log face detection event
                 frame_path = None
                 if self.save_frames and self.frame_count % 30 == 0:
                     frame_path = self.save_annotated_frame(frame, person_bbox, person_id)
-                
+
                 self.face_detector.log_detection_event(
                     self.db, person_id, person_confidence, frame_path
                 )
+
+            detections_with_person_ids.append((person_bbox, person_confidence, person_id))
+
+        # Step 3: Update body tracker with all detections
+        tracked_bodies = self.body_tracker.update(detections_with_person_ids, timestamp)
+
+        # Step 4: Process each tracked body
+        current_positions = {}
+
+        for track_data in tracked_bodies:
+            tracking_id = track_data['tracking_id']
+            person_bbox = track_data['bbox']
+            person_confidence = track_data['confidence']
+            person_id = track_data['person_id']
 
             # Calculate position (centroid)
             left, top, right, bottom = person_bbox
             norm_x = ((left + right) / 2) / self.frame_width
             norm_y = ((top + bottom) / 2) / self.frame_height
 
-            # Store position for this frame
-            if person_id:
-                current_positions[person_id] = (norm_x, norm_y)
+            # Detect current zone
+            current_zone = self.zone_detector.find_zone((norm_x, norm_y))
+            zone_id = current_zone.get('id') if current_zone else None
 
-                # Update trajectory
-                self.trajectory_tracker.update_position(
-                    person_id, person_bbox, timestamp,
-                    self.frame_width, self.frame_height
+            # Log body detection to database
+            self.body_tracker.log_detection_to_db(
+                self.db,
+                tracking_id=tracking_id,
+                bbox=person_bbox,
+                confidence=person_confidence,
+                person_id=person_id,
+                zone_id=zone_id,
+                frame_path=None
+            )
+
+            # Update/create person session
+            self.body_tracker.update_or_create_session(
+                self.db,
+                tracking_id=tracking_id,
+                person_id=person_id,
+                zone_id=zone_id
+            )
+
+            # Store position for this frame (use tracking_id as key)
+            current_positions[tracking_id] = (norm_x, norm_y)
+
+            # Update trajectory (now works with tracking_id)
+            self.trajectory_tracker.update_position(
+                tracking_id, person_id, person_bbox, timestamp,
+                self.frame_width, self.frame_height, zone_id
+            )
+
+            # Update dwell time (now works with tracking_id)
+            dwell_time = self.dwell_calculator.update(
+                tracking_id, person_id, zone_id, (norm_x, norm_y), timestamp
+            )
+
+            # Check line crossings (now works with tracking_id)
+            crossing_event = self.line_crossing_detector.check_crossing(
+                tracking_id, person_id, (norm_x, norm_y), timestamp
+            )
+            if crossing_event:
+                self.line_crossing_detector.log_crossing(
+                    self.db, crossing_event, timestamp
                 )
 
-                # Detect current zone
-                current_zone = self.zone_detector.find_zone((norm_x, norm_y))
+            # Add to heatmap (always, regardless of person_id)
+            self.heatmap_generator.add_detection((norm_x, norm_y), weight=1.0)
 
-                # Update dwell time
-                dwell_time = self.dwell_calculator.update(
-                    person_id, current_zone, (norm_x, norm_y), timestamp
-                )
-
-                # Check line crossings
-                crossing_event = self.line_crossing_detector.check_crossing(
-                    person_id, (norm_x, norm_y), timestamp
-                )
-                if crossing_event:
-                    self.line_crossing_detector.log_crossing(
-                        self.db, person_id, crossing_event, timestamp
-                    )
-
-                # Add to heatmap
-                self.heatmap_generator.add_detection((norm_x, norm_y), weight=1.0)
-
-                # Track active person
-                self.active_persons[person_id] = {
-                    'last_seen': timestamp,
-                    'position': (norm_x, norm_y),
-                    'zone': current_zone,
-                    'dwell_time': dwell_time
-                }
+            # Track active body (use tracking_id)
+            self.active_persons[tracking_id] = {
+                'tracking_id': tracking_id,
+                'person_id': person_id,
+                'last_seen': timestamp,
+                'position': (norm_x, norm_y),
+                'bbox': person_bbox,
+                'zone': current_zone
+            }
 
         # Update occupancy
         occupancy_counts = self.occupancy_counter.update(current_positions, timestamp)
@@ -457,60 +484,106 @@ class ComprehensiveAnalysisRunner:
         return filename
 
     def run_gemini_analysis(self, timestamp: datetime):
-        """Run Gemini AI analysis on recent footage"""
+        """Run comprehensive structured Gemini AI analysis on recent footage"""
         if not self.enable_gemini or not self.gemini_analyzer:
             return
 
         try:
-            print(f"\n[{timestamp.strftime('%H:%M:%S')}] Running Gemini AI analysis...")
-            
+            print(f"\n[{timestamp.strftime('%H:%M:%S')}] Running comprehensive Gemini AI analysis...")
+
+            # Prepare detected bodies information for Gemini
+            detected_bodies = []
+            zones_info = []
+
+            # Get info about all currently tracked bodies
+            for tracking_id, body_data in self.active_persons.items():
+                zone_name = body_data.get('zone', {}).get('name', 'Unknown') if body_data.get('zone') else 'Unknown'
+                detected_bodies.append({
+                    'tracking_id': tracking_id,
+                    'person_id': body_data.get('person_id'),
+                    'bbox': body_data.get('bbox'),
+                    'zone': zone_name
+                })
+
+            # Get zones information
+            if hasattr(self.zone_detector, 'zones'):
+                zones_info = [
+                    {
+                        'name': zone.get('name', 'Unknown'),
+                        'type': zone.get('zone_type', zone.get('type', 'unknown')),
+                        'id': zone.get('id')
+                    }
+                    for zone in self.zone_detector.zones
+                ]
+
             # For YouTube URLs, pass directly to Gemini without downloading
             if self.is_youtube:
-                print(f"Analyzing YouTube URL directly: {self.video_source}")
-                result = self.gemini_analyzer.analyze_behavior(youtube_url=self.video_source)
+                print(f"Analyzing YouTube URL with {len(detected_bodies)} tracked bodies")
+                result = self.gemini_analyzer.analyze_comprehensive_structured(
+                    youtube_url=self.video_source,
+                    detected_bodies=detected_bodies,
+                    zones=zones_info,
+                    time_window_seconds=10
+                )
                 clip_path = None
             else:
                 # For local files, record 10-second clip
                 clip_path = self.camera.record_clip(duration=10)
-                
+
                 if not clip_path or not os.path.exists(clip_path):
                     print("Failed to record clip for Gemini analysis")
                     return
-                
-                # Run comprehensive behavior analysis
-                result = self.gemini_analyzer.analyze_behavior(video_path=clip_path)
-            
-            if "error" not in result:
-                print("Gemini analysis completed successfully")
-                
-                # Save to database for any active persons
-                for person_id in self.active_persons.keys():
-                    # Get latest detection event
-                    latest_event = self.db.query(DetectionEvent)\
-                        .filter(DetectionEvent.person_id == person_id)\
-                        .order_by(DetectionEvent.timestamp.desc())\
-                        .first()
-                    
-                    if latest_event:
-                        self.gemini_analyzer.save_analysis_to_db(
-                            self.db,
-                            person_id,
-                            latest_event.id,
-                            "full_behavior",
-                            result.get("full_analysis", ""),
-                            clip_path
-                        )
-                
-                # Save analysis to file
-                analysis_file = f"{self.output_dir}/reports/gemini_analysis_{timestamp.strftime('%Y%m%d_%H%M%S')}.txt"
-                with open(analysis_file, 'w') as f:
-                    f.write(result.get("full_analysis", ""))
-                print(f"Analysis saved to {analysis_file}")
+
+                print(f"Analyzing video clip with {len(detected_bodies)} tracked bodies")
+                result = self.gemini_analyzer.analyze_comprehensive_structured(
+                    video_path=clip_path,
+                    detected_bodies=detected_bodies,
+                    zones=zones_info,
+                    time_window_seconds=10
+                )
+
+            if result.get('success'):
+                print("✅ Gemini comprehensive analysis completed successfully")
+
+                # Save structured analysis to database
+                scene_analysis = self.gemini_analyzer.save_comprehensive_analysis_to_db(
+                    self.db,
+                    result,
+                    clip_path
+                )
+
+                if scene_analysis:
+                    print(f"   Saved Scene Analysis ID: {scene_analysis.id}")
+
+                    # Also save full JSON to file for reference
+                    analysis_file = f"{self.output_dir}/reports/gemini_comprehensive_{timestamp.strftime('%Y%m%d_%H%M%S')}.json"
+                    with open(analysis_file, 'w', encoding='utf-8') as f:
+                        import json
+                        json.dump(result['structured_analysis'], f, indent=2, ensure_ascii=False)
+                    print(f"   Analysis JSON saved to {analysis_file}")
+
+                    # Print summary
+                    structured = result['structured_analysis']
+                    scene = structured.get('scene', {})
+                    individuals = structured.get('individuals', [])
+                    events = structured.get('events', [])
+                    alerts = structured.get('alerts', [])
+
+                    print(f"\n   📊 Analysis Summary:")
+                    print(f"      Scene: {scene.get('overall_summary', 'N/A')[:80]}...")
+                    print(f"      Individuals analyzed: {len(individuals)}")
+                    print(f"      Events detected: {len(events)}")
+                    print(f"      Alerts generated: {len(alerts)}")
+
             else:
-                print(f"Gemini analysis error: {result.get('error')}")
+                print(f"❌ Gemini analysis error: {result.get('error')}")
+                if result.get('raw_response'):
+                    print(f"   Raw response (first 500 chars): {result['raw_response'][:500]}...")
 
         except Exception as e:
-            print(f"Error running Gemini analysis: {e}")
+            print(f"Error running comprehensive Gemini analysis: {e}")
+            import traceback
+            traceback.print_exc()
 
     def save_periodic_data(self, timestamp: datetime):
         """Save data periodically"""
@@ -545,26 +618,30 @@ class ComprehensiveAnalysisRunner:
             print(f"Error saving heatmap: {e}")
 
     def cleanup_inactive_persons(self, current_time: datetime, timeout_seconds: int = 5):
-        """Remove persons not seen recently"""
-        inactive_ids = []
-        
-        for person_id, data in self.active_persons.items():
-            time_since_seen = (current_time - data['last_seen']).total_seconds()
-            
-            if time_since_seen > timeout_seconds:
-                inactive_ids.append(person_id)
-                
-                # Log zone exit if in a zone
-                if data.get('zone'):
-                    self.dwell_calculator.exit_zone(
-                        self.db, person_id, data['zone'], current_time
-                    )
-                
-                # End trajectory tracking
-                self.trajectory_tracker.end_session(person_id)
+        """Remove bodies not seen recently"""
+        inactive_tracking_ids = []
 
-        for person_id in inactive_ids:
-            del self.active_persons[person_id]
+        for tracking_id, data in self.active_persons.items():
+            time_since_seen = (current_time - data['last_seen']).total_seconds()
+
+            if time_since_seen > timeout_seconds:
+                inactive_tracking_ids.append(tracking_id)
+
+                # End person session in database
+                self.body_tracker.end_session(self.db, tracking_id)
+
+                # Log zone exit if in a zone (now uses tracking_id)
+                zone = data.get('zone')
+                if zone and zone.get('id'):
+                    self.dwell_calculator.exit_zone(
+                        self.db, tracking_id, zone['id'], current_time
+                    )
+
+                # End trajectory tracking (now uses tracking_id)
+                self.trajectory_tracker.end_session(tracking_id)
+
+        for tracking_id in inactive_tracking_ids:
+            del self.active_persons[tracking_id]
 
     def finalize_analysis(self):
         """Finalize analysis and generate summary"""

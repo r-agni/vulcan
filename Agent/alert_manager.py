@@ -249,3 +249,40 @@ class AlertManager:
         """Get the highest priority active alert"""
         alerts = self.get_active_alerts()
         return alerts[0] if alerts else None
+
+    def assign_alert_to_staff(
+        self,
+        db,
+        alert_id: str,
+        staff_coordinator,
+        zone_positions: Dict[int, tuple]
+    ) -> Optional[int]:
+        """
+        Assign alert to appropriate staff member
+
+        Args:
+            db: Database session
+            alert_id: Alert ID to assign
+            staff_coordinator: StaffCoordinator instance
+            zone_positions: Dict mapping zone_id to (x, y) position
+
+        Returns:
+            staff_id of assigned person, or None if no one available
+        """
+        alert = self.get_alert_by_id(alert_id)
+
+        if not alert:
+            return None
+
+        staff_id = staff_coordinator.assign_alert_to_staff(
+            db, alert, zone_positions
+        )
+
+        if staff_id:
+            # Update alert context with assignment
+            if not alert.context_data:
+                alert.context_data = {}
+            alert.context_data['assigned_to'] = staff_id
+            alert.context_data['assigned_at'] = datetime.now().isoformat()
+
+        return staff_id
