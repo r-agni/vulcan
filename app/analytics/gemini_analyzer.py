@@ -785,6 +785,10 @@ class GeminiAnalyzer:
         youtube_url: str = None,
         detected_bodies: List[Dict] = None,
         zones: List[Dict] = None,
+        product_interactions: List[Dict] = None,
+        gaze_fixations: List[Dict] = None,
+        queue_status: Dict = None,
+        customer_profiles: List[Dict] = None,
         time_window_seconds: int = 10
     ) -> Dict:
         """
@@ -797,6 +801,14 @@ class GeminiAnalyzer:
             detected_bodies: List of detected bodies with tracking info
                             [{"tracking_id": "track_001", "bbox": [...], "person_id": 5, "zone": "Electronics"}]
             zones: List of zone definitions for context
+            product_interactions: List of active product interactions
+                                 [{"tracking_id": "track_001", "product_name": "Product X", "interaction_type": "examining", "hand_gesture": "pointing"}]
+            gaze_fixations: List of active gaze fixations
+                           [{"tracking_id": "track_001", "target_zone": "Electronics", "duration": 3.5}]
+            queue_status: Current queue information
+                         {"queue_count": 1, "max_length": 3, "avg_wait_time": 45.0}
+            customer_profiles: List of recognized customer profiles
+                              [{"tracking_id": "track_001", "profile_uuid": "xxx", "vip_status": true, "visit_frequency": "weekly"}]
             time_window_seconds: Duration of analysis window
 
         Returns:
@@ -849,12 +861,66 @@ class GeminiAnalyzer:
                     zone_type = zone.get('type', 'unknown')
                     zone_context += f"- {zone_name} ({zone_type})\n"
 
+            # Build context about product interactions
+            product_context = ""
+            if product_interactions:
+                product_context = "\n\nACTIVE PRODUCT INTERACTIONS:\n"
+                for interaction in product_interactions:
+                    tracking_id = interaction.get('tracking_id', 'unknown')
+                    product_name = interaction.get('product_name', 'Unknown Product')
+                    interaction_type = interaction.get('interaction_type', 'examining')
+                    hand_gesture = interaction.get('hand_gesture', 'none')
+                    duration = interaction.get('duration', 0)
+                    product_context += f"- {tracking_id} is {interaction_type} '{product_name}' (gesture: {hand_gesture}, duration: {duration:.1f}s)\n"
+
+            # Build context about gaze fixations
+            gaze_context = ""
+            if gaze_fixations:
+                gaze_context = "\n\nGAZE TRACKING DATA:\n"
+                for fixation in gaze_fixations:
+                    tracking_id = fixation.get('tracking_id', 'unknown')
+                    target_zone = fixation.get('target_zone', 'Unknown Zone')
+                    target_product = fixation.get('target_product')
+                    duration = fixation.get('duration', 0)
+                    if target_product:
+                        gaze_context += f"- {tracking_id} gazing at '{target_product}' in {target_zone} ({duration:.1f}s)\n"
+                    else:
+                        gaze_context += f"- {tracking_id} gazing at {target_zone} ({duration:.1f}s)\n"
+
+            # Build context about queues
+            queue_context = ""
+            if queue_status:
+                queue_count = queue_status.get('queue_count', 0)
+                max_length = queue_status.get('max_length', 0)
+                avg_wait = queue_status.get('avg_wait_time', 0)
+                if queue_count > 0:
+                    queue_context = f"\n\nQUEUE STATUS:\n- {queue_count} active queue(s), longest: {max_length} people, avg wait: {avg_wait:.0f}s\n"
+
+            # Build context about customer profiles
+            customer_context = ""
+            if customer_profiles:
+                customer_context = "\n\nCUSTOMER RECOGNITION:\n"
+                for profile in customer_profiles:
+                    tracking_id = profile.get('tracking_id', 'unknown')
+                    vip = profile.get('vip_status', False)
+                    frequency = profile.get('visit_frequency', 'unknown')
+                    favorite_zones = profile.get('favorite_zones', [])
+                    vip_badge = " (VIP)" if vip else ""
+                    customer_context += f"- {tracking_id}: Returning customer{vip_badge}, visits {frequency}"
+                    if favorite_zones:
+                        customer_context += f", prefers {', '.join(favorite_zones[:2])}"
+                    customer_context += "\n"
+
             # Create comprehensive structured prompt
             prompt = f"""
             Analyze this {time_window_seconds}-second surveillance video clip and provide a COMPREHENSIVE STRUCTURED ANALYSIS.
 
             {body_context}
             {zone_context}
+            {product_context}
+            {gaze_context}
+            {queue_context}
+            {customer_context}
 
             You MUST respond with VALID JSON in this EXACT structure (no additional text, no markdown):
 
@@ -888,6 +954,9 @@ class GeminiAnalyzer:
                 {{
                   "body_tracking_id": "track_XXX",
                   "person_id": null,
+                  "customer_profile_uuid": null,
+                  "is_returning_customer": false,
+                  "vip_status": false,
                   "appearance": {{
                     "clothing": "Detailed clothing description",
                     "accessories": "Items carried, worn",
@@ -906,6 +975,27 @@ class GeminiAnalyzer:
                     "current_zone": "Zone name",
                     "sub_location": "Specific area within zone",
                     "position_description": "Where exactly they are"
+                  }},
+                  "product_interactions": [
+                    {{
+                      "product_name": "Specific Product Name",
+                      "product_category": "Electronics|Clothing|Food|etc",
+                      "interaction_types": ["gazing", "reaching", "examining", "picking_up"],
+                      "hand_gesture": "pointing|grabbing|holding|open_palm|null",
+                      "hand_position": {{"x": 0.0, "y": 0.0}},
+                      "gaze_duration_seconds": 0.0,
+                      "interaction_duration_seconds": 0.0,
+                      "engagement_level": 0-10,
+                      "purchase_likelihood": 0-10,
+                      "comparison_behavior": "comparing with other products|focused on single item|null"
+                    }}
+                  ],
+                  "gaze_behavior": {{
+                    "primary_focus_zone": "Zone name or null",
+                    "secondary_focus_zones": ["Zone1", "Zone2"],
+                    "attention_span_seconds": 0.0,
+                    "distraction_level": "low|medium|high",
+                    "visual_search_pattern": "systematic|random|targeted|null"
                   }},
                   "timeline_in_clip": [
                     {{"time": "MM:SS", "action": "What happened at this time"}}
@@ -950,12 +1040,21 @@ class GeminiAnalyzer:
                 {{
                   "alert_id": "alert_XXX",
                   "priority": "low|medium|high|critical",
-                  "type": "sales_opportunity|queue_management|customer_service|security",
+                  "type": "sales_opportunity|queue_management|customer_service|security|product_interest|vip_customer",
                   "title": "Short alert title",
                   "message": "Detailed alert message",
                   "location": "Where",
+                  "tracking_id": "track_XXX",
+                  "product_name": "Product name if applicable",
                   "recommended_recipient": "sales_staff|manager|security",
-                  "expiry_seconds": 300
+                  "recommended_action": "Specific action to take",
+                  "expiry_seconds": 300,
+                  "context": {{
+                    "customer_profile": "returning_customer|new_customer|vip|unknown",
+                    "engagement_score": 0-10,
+                    "time_in_zone_seconds": 0,
+                    "similar_past_behavior": "description or null"
+                  }}
                 }}
               ],
 
@@ -978,6 +1077,11 @@ class GeminiAnalyzer:
             8. Note any unusual behaviors or patterns
             9. Make zone-specific observations for each active zone
             10. Generate relevant alerts based on what you observe
+            11. For product interactions: use ACTUAL product names from the product interaction context provided above
+            12. For gaze behavior: correlate gaze tracking data with visible attention patterns in the video
+            13. For customer recognition: use the customer profile information (VIP status, visit frequency) to inform your analysis
+            14. For alerts: include tracking_id, product_name, and customer context when generating product-related or sales opportunity alerts
+            15. Score purchase_likelihood based on combination of: gaze duration, hand gestures (grabbing/holding = high intent), interaction duration, and comparison behavior
 
             Begin your JSON response now:
             """
@@ -1120,9 +1224,59 @@ class GeminiAnalyzer:
                 )
                 db.add(behavior)
 
+                # Save product-specific interactions from Gemini analysis
+                for product_interaction in individual_data.get('product_interactions', []):
+                    try:
+                        # Get product from database if it exists
+                        from app.core.database import Product
+                        product_name = product_interaction.get('product_name')
+                        product = db.query(Product).filter(Product.name == product_name).first() if product_name else None
+
+                        # Create InteractionLog record with product context
+                        product_inter_log = InteractionLog(
+                            scene_analysis_id=scene_analysis.id,
+                            interaction_type='customer_product',
+                            participants=[tracking_id],
+                            location=individual_data.get('location', {}).get('current_zone', 'Unknown'),
+                            description=f"Product interaction: {', '.join(product_interaction.get('interaction_types', []))} with {product_name}",
+                            duration_seconds=product_interaction.get('interaction_duration_seconds'),
+                            outcome='ongoing',
+                            product_names=[product_name] if product_name else [],
+                            engagement_score=product_interaction.get('engagement_level', 0) / 10.0 if product_interaction.get('engagement_level') else None
+                        )
+                        db.add(product_inter_log)
+
+                    except Exception as e:
+                        print(f"Warning: Could not save product interaction: {e}")
+                        continue
+
+                # Save gaze behavior data
+                gaze_behavior = individual_data.get('gaze_behavior', {})
+                if gaze_behavior.get('primary_focus_zone'):
+                    try:
+                        # Create interaction log for significant gaze events
+                        gaze_inter_log = InteractionLog(
+                            scene_analysis_id=scene_analysis.id,
+                            interaction_type='customer_product',  # Gaze is a form of product interaction
+                            participants=[tracking_id],
+                            location=gaze_behavior.get('primary_focus_zone', 'Unknown'),
+                            description=f"Gaze fixation: {gaze_behavior.get('visual_search_pattern', 'unknown')} pattern, {gaze_behavior.get('distraction_level', 'unknown')} distraction",
+                            duration_seconds=gaze_behavior.get('attention_span_seconds'),
+                            outcome='ongoing'
+                        )
+                        db.add(gaze_inter_log)
+                    except Exception as e:
+                        print(f"Warning: Could not save gaze interaction: {e}")
+
             db.commit()
 
             print(f"✅ Saved comprehensive analysis to database (Scene ID: {scene_analysis.id})")
+            print(f"   - Events: {len(structured_data.get('events', []))}")
+            print(f"   - Interactions: {len(structured_data.get('interactions', []))}")
+            print(f"   - Individuals: {len(structured_data.get('individuals', []))}")
+            product_interactions_count = sum(len(ind.get('product_interactions', [])) for ind in structured_data.get('individuals', []))
+            if product_interactions_count > 0:
+                print(f"   - Product interactions: {product_interactions_count}")
             return scene_analysis
 
         except Exception as e:

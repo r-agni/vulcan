@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional, Callable
 import numpy as np
 try:
-    from activity_logger import log_activity
+    from app.utils.activity_logger import log_activity
 except ImportError:
     # Fallback if activity_logger is not available
     def log_activity(msg, category="system", metadata=None):

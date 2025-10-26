@@ -14,13 +14,13 @@ import numpy as np
 from sqlalchemy.orm import Session
 import time
 
-from app.database import init_db, get_db, Person, DetectionEvent, SessionLocal, BodyDetectionEvent, PersonSession
-from app.camera_manager import CameraManager
-from app.person_detector import PersonDetector
-from app.face_detector import FaceDetector
-from app.gemini_analyzer import GeminiAnalyzer
-from app.body_tracker import BodyTracker
-from app.retail_analytics import (
+from app.core.database import init_db, get_db, Person, DetectionEvent, SessionLocal, BodyDetectionEvent, PersonSession
+from app.video.camera_manager import CameraManager
+from app.detection.person_detector import PersonDetector
+from app.detection.face_detector import FaceDetector
+from app.analytics.gemini_analyzer import GeminiAnalyzer
+from app.detection.body_tracker import BodyTracker
+from app.analytics.retail_analytics import (
     TrajectoryTracker, DwellTimeCalculator, ZoneDetector,
     OccupancyCounter, LineCrossingDetector, HeatmapGenerator, QueueDetector
 )
@@ -165,7 +165,7 @@ class ComprehensiveAnalysisRunner:
                 return
 
             # Save zones to database
-            from database import Zone, VirtualLine
+            from app.core.database import Zone, VirtualLine
             
             zones_created = 0
             lines_created = 0
@@ -516,13 +516,56 @@ class ComprehensiveAnalysisRunner:
                     for zone in self.zone_detector.zones
                 ]
 
+            # Prepare product interaction context
+            product_interactions = []
+            if hasattr(self, 'interaction_tracker'):
+                active_interactions = self.interaction_tracker.get_active_interactions()
+                for interaction in active_interactions:
+                    product_interactions.append({
+                        'tracking_id': interaction.get('tracking_id'),
+                        'product_name': interaction.get('product_name', 'Unknown Product'),
+                        'interaction_type': interaction.get('interaction_type', 'examining'),
+                        'hand_gesture': interaction.get('gesture_type'),
+                        'duration': (datetime.utcnow() - interaction.get('start_time')).total_seconds() if interaction.get('start_time') else 0
+                    })
+
+            # Prepare gaze fixation context
+            gaze_fixations = []
+            if hasattr(self, 'gaze_detector') and hasattr(self.gaze_detector, 'active_fixations'):
+                for tracking_id, fixation in self.gaze_detector.active_fixations.items():
+                    gaze_fixations.append({
+                        'tracking_id': tracking_id,
+                        'target_zone': fixation.get('target_zone'),
+                        'target_product': fixation.get('target_product'),
+                        'duration': fixation.get('fixation_duration_seconds', 0)
+                    })
+
+            # Prepare queue status
+            queue_status = None
+            if hasattr(self, 'queue_detector'):
+                active_queues = self.queue_detector.get_active_queues() if hasattr(self.queue_detector, 'get_active_queues') else []
+                if active_queues:
+                    queue_status = {
+                        'queue_count': len(active_queues),
+                        'max_length': max([q.get('length', 0) for q in active_queues]) if active_queues else 0,
+                        'avg_wait_time': sum([q.get('avg_wait_time', 0) for q in active_queues]) / len(active_queues) if active_queues else 0
+                    }
+
+            # Prepare customer profile context (placeholder for future enhancement)
+            customer_profiles = []
+            # TODO: If customer recognition is enabled, populate this with recognized customer data
+
             # For YouTube URLs, pass directly to Gemini without downloading
             if self.is_youtube:
-                print(f"Analyzing YouTube URL with {len(detected_bodies)} tracked bodies")
+                print(f"Analyzing YouTube URL with {len(detected_bodies)} tracked bodies, {len(product_interactions)} product interactions, {len(gaze_fixations)} gaze fixations")
                 result = self.gemini_analyzer.analyze_comprehensive_structured(
                     youtube_url=self.video_source,
                     detected_bodies=detected_bodies,
                     zones=zones_info,
+                    product_interactions=product_interactions,
+                    gaze_fixations=gaze_fixations,
+                    queue_status=queue_status,
+                    customer_profiles=customer_profiles,
                     time_window_seconds=10
                 )
                 clip_path = None
@@ -534,11 +577,15 @@ class ComprehensiveAnalysisRunner:
                     print("Failed to record clip for Gemini analysis")
                     return
 
-                print(f"Analyzing video clip with {len(detected_bodies)} tracked bodies")
+                print(f"Analyzing video clip with {len(detected_bodies)} tracked bodies, {len(product_interactions)} product interactions, {len(gaze_fixations)} gaze fixations")
                 result = self.gemini_analyzer.analyze_comprehensive_structured(
                     video_path=clip_path,
                     detected_bodies=detected_bodies,
                     zones=zones_info,
+                    product_interactions=product_interactions,
+                    gaze_fixations=gaze_fixations,
+                    queue_status=queue_status,
+                    customer_profiles=customer_profiles,
                     time_window_seconds=10
                 )
 

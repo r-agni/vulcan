@@ -136,6 +136,13 @@ class CameraRoom(Base):
     total_alerts_today = Column(Integer, default=0)  # All alerts generated today
     total_events_today = Column(Integer, default=0)  # All events logged today
 
+    # Hand Gestures Summary (at this timestamp)
+    hand_gestures_summary = Column(JSON, nullable=True)  # {pointing: 0, grabbing: 0, holding: 0, open_palm: 0, total: 0}
+
+    # Customer Recognition Summary (at this timestamp)
+    customer_recognition_summary = Column(JSON, nullable=True)
+    # {total_recognized: 0, vip_customers_present: 0, new_customers: 0, returning_customers: 0, recognition_rate: 0.0}
+
     # ==================== PRODUCT INVENTORY DATA ====================
 
     # Product Catalog Snapshot

@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session
 import uuid
 
 try:
-    from .database import BodyDetectionEvent, PersonSession
+    from app.core.database import BodyDetectionEvent, PersonSession
 except ImportError:
-    from database import BodyDetectionEvent, PersonSession
+    from app.core.database import BodyDetectionEvent, PersonSession
 
 
 class BodyTracker:

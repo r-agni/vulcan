@@ -550,7 +550,9 @@ def process_frame(frame):
 
             # Update trajectory
             current_zone_id = zone_detector.find_zone((center_x, center_y))
+            tracking_id = str(person_id)  # Use person_id as tracking_id
             trajectory_tracker.update_position(
+                tracking_id,
                 person_id,
                 person_bbox,
                 datetime.now(UTC),
@@ -572,7 +574,7 @@ def process_frame(frame):
                 )
 
             # Check line crossings
-            line_crossing_detector.check_crossing(person_id, (center_x, center_y), datetime.now(UTC))
+            line_crossing_detector.check_crossing(tracking_id, person_id, (center_x, center_y), datetime.now(UTC))
 
             # === PHASE 2: Hand & Interaction Detection ===
             if zones_data and len(zones_data) > 0:
@@ -627,7 +629,7 @@ def process_frame(frame):
                 )
 
                 # Get gaze target position for product tracking
-                gaze_target_position = gaze_data.get('estimated_gaze_point')
+                gaze_target_position = gaze_data.target_position if hasattr(gaze_data, 'target_position') else None
 
                 # Log significant fixations (optional - can be periodic)
                 # Uncomment to log every fixation to DB
@@ -1132,7 +1134,7 @@ class ManualObservationCreate(BaseModel):
     requires_followup: bool = False
 
 
-from database import (
+from app.core.database import (
     SessionLocal, ManualObservation, Person, BodyDetectionEvent,
     PersonSession, BehaviorAnalysis, SceneAnalysis, EventLog
 )
@@ -1506,7 +1508,7 @@ async def staff_clock_in(employee_id: str):
     """Staff member clocks in for shift"""
     db = SessionLocal()
     try:
-        from database import StaffMember
+        from app.core.database import StaffMember
         staff = db.query(StaffMember).filter(
             StaffMember.employee_id == employee_id
         ).first()
@@ -1535,7 +1537,7 @@ async def staff_clock_out(employee_id: str):
     """Staff member clocks out from shift"""
     db = SessionLocal()
     try:
-        from database import StaffMember
+        from app.core.database import StaffMember
         staff = db.query(StaffMember).filter(
             StaffMember.employee_id == employee_id
         ).first()
@@ -1564,7 +1566,7 @@ async def get_staff_assignments(staff_id: int):
     """Get active assignments for staff member"""
     db = SessionLocal()
     try:
-        from database import AlertAssignment
+        from app.core.database import AlertAssignment
         assignments = db.query(AlertAssignment).filter(
             AlertAssignment.staff_id == staff_id,
             AlertAssignment.completed_at == None
@@ -1639,7 +1641,7 @@ async def get_customer_profile(profile_uuid: str):
     """Get customer profile insights (privacy-compliant)"""
     db = SessionLocal()
     try:
-        from database import CustomerProfile
+        from app.core.database import CustomerProfile
         from customer_recognition import CustomerRecognitionAgent
 
         profile = db.query(CustomerProfile).filter(
@@ -1669,7 +1671,7 @@ async def customer_opt_out(profile_uuid: str):
     """Handle customer opt-out request (GDPR compliance)"""
     db = SessionLocal()
     try:
-        from database import CustomerProfile
+        from app.core.database import CustomerProfile
         profile = db.query(CustomerProfile).filter(
             CustomerProfile.profile_uuid == profile_uuid
         ).first()
@@ -1701,7 +1703,7 @@ async def get_customer_stats():
     """Get customer recognition statistics"""
     db = SessionLocal()
     try:
-        from database import CustomerProfile, CustomerVisit
+        from app.core.database import CustomerProfile, CustomerVisit
         total_profiles = db.query(CustomerProfile).filter(
             CustomerProfile.opt_out_date == None
         ).count()
@@ -1746,7 +1748,7 @@ async def get_customer_list(limit: int = 20, active_only: bool = False):
     """Get list of customers with basic info"""
     db = SessionLocal()
     try:
-        from database import CustomerProfile
+        from app.core.database import CustomerProfile
 
         query = db.query(CustomerProfile).filter(
             CustomerProfile.opt_out_date == None
@@ -1787,7 +1789,7 @@ async def get_recent_customer_visits(hours: int = 24, limit: int = 50):
     """Get recent customer visits"""
     db = SessionLocal()
     try:
-        from database import CustomerVisit, CustomerProfile
+        from app.core.database import CustomerVisit, CustomerProfile
 
         cutoff = datetime.now(UTC) - timedelta(hours=hours)
 

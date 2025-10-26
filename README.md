@@ -539,23 +539,569 @@ Gemini analyzes complete context and generates 5-8 alerts per cycle:
 **Technology Stack**:
 - **Vector Store**: ChromaDB for embeddings
 - **Embeddings**: Google Generative AI embeddings (768 dimensions)
-- **Query Engine**: Gemini 2.5 Flash for answer generation
+- **Query Engines**: 
+  - Gemini 2.5 Flash for standard queries
+  - Claude (Anthropic) for enhanced intelligent routing
 - **Document Sources**: Gemini behavior analysis + analytics data
 
-**Capabilities**:
+#### Dual Query Engine Architecture
+
+The system supports two query engines with different capabilities:
+
+**1. Gemini Query Engine** (`QueryEngine`)
+- Fast, standard RAG pipeline
+- Direct Gemini API integration
+- Best for straightforward factual queries
+- Lower latency for simple questions
+
+**2. Claude Query Engine** (`ClaudeQueryEngine`)
+- Enhanced intelligent routing
+- Intent analysis system
+- Automatic visualization generation
+- Multi-collection search strategy
+- Better for complex analytical questions
+
+#### Dual Collection System
+
+The RAG system maintains two specialized collections for optimal search:
+
+**Metadata Collection** (`metadata_collection`)
+- Structured data with precise metrics
+- Timestamps, IDs, numerical values
+- Zone occupancy, dwell times, queue metrics
+- Best for: "How many customers?", "What was the wait time?", "Show occupancy trends"
+
+**Analysis Collection** (`analysis_collection`)
+- Verbal behavioral insights from Gemini
+- Rich descriptive text about customer behavior
+- Emotional states, shopping patterns, interactions
+- Best for: "What were customers feeling?", "Describe behavior patterns", "Why did they leave?"
+
+**Intelligent Routing**:
+- Query intent analyzer determines which collection(s) to search
+- Metadata queries → Metadata collection only (faster)
+- Behavioral queries → Analysis collection
+- Complex queries → Both collections with smart merging
+
+#### Visualization Capabilities
+
+**Automatic Chart Generation**:
+The system can automatically generate visualizations from query results:
+
+**Chart Types**:
+- **Line Charts**: Time-series trends (occupancy over time, dwell time progression)
+- **Bar Charts**: Comparative analysis (zone metrics, alert distributions)
+- **Pie Charts**: Distribution breakdowns (customer categories, zone usage)
+- **Timelines**: Event sequences (customer journeys, alert timelines)
+
+**Features**:
+- Auto-detects when visualization would be helpful
+- Extracts relevant data from query results
+- Generates interactive matplotlib charts
+- Returns base64-encoded images for frontend display
+
+**Example**:
+```python
+result = claude_engine.query("Show me occupancy trends for zone 1 today")
+# result['visualization'] contains chart data
+# result['intent']['needs_visualization'] = True
+# result['intent']['visualization_type'] = "line"
+```
+
+#### Chat Session Management
+
+**Conversational Context**:
+- `ChatSession` class maintains conversation history
+- Multi-turn dialogue support with context awareness
+- Smart context window management (last 6 messages)
+- Follow-up questions understand previous context
+
+**Example Conversation**:
+```
+User: "Who was in the electronics section?"
+Bot: "3 customers detected in electronics between 2-3pm..."
+
+User: "What were they looking at?"
+Bot: [Uses context from previous question to know "they" refers to those 3 customers]
+
+User: "Did any of them make a purchase?"
+Bot: [Continues thread with full context]
+```
+
+#### Intent Analysis System
+
+**Query Understanding**:
+The Claude engine analyzes each query to determine:
+
+1. **Search Strategy**:
+   - Should search metadata collection? (for metrics)
+   - Should search analysis collection? (for behavioral insights)
+   - Both? (for comprehensive answers)
+
+2. **Visualization Needs**:
+   - Does this question benefit from a chart?
+   - What type of visualization is appropriate?
+   - What data fields should be visualized?
+
+3. **Query Type Classification**:
+   - Factual (specific metrics)
+   - Analytical (patterns, trends)
+   - Comparative (zone vs zone, day vs day)
+   - Exploratory (open-ended insights)
+
+**Intent Response Structure**:
+```json
+{
+  "search_metadata": true,
+  "search_analysis": false,
+  "needs_visualization": true,
+  "visualization_type": "line",
+  "query_type": "analytical",
+  "complexity": "medium"
+}
+```
+
+#### RAG System Components
+
+**Core Classes**:
+
+1. **`EmbeddingGenerator`** (`embeddings.py`)
+   - Gemini text-embedding-004 integration
+   - Batch embedding support
+   - 768-dimensional vectors
+
+2. **`VectorStore`** (`vector_store.py`)
+   - ChromaDB wrapper
+   - Multi-collection management
+   - Metadata filtering
+   - Similarity search
+
+3. **`DocumentIndexer`** (`document_indexer.py`)
+   - Indexes Gemini reports, behavior analysis, dwell times, queue metrics, alerts
+   - Automatic chunking for large documents
+   - Metadata extraction and enrichment
+   - Batch processing for performance
+
+4. **`QueryEngine`** (`query_engine.py`)
+   - Standard Gemini-powered RAG
+   - Single collection search
+   - Answer generation with citations
+
+5. **`ClaudeQueryEngine`** (`claude_query_engine.py`)
+   - Enhanced routing and intent analysis
+   - Multi-collection search
+   - Visualization generation
+   - Session-aware responses
+
+6. **`ClaudeClient`** (`claude_client.py`)
+   - Anthropic API wrapper
+   - Tool calling support
+   - Conversation management
+
+7. **`ChartGenerator`** (`visualization.py`)
+   - Matplotlib-based chart generation
+   - Multiple chart types
+   - Base64 encoding for web delivery
+
+8. **`ChatSession`** (`chat_session.py`)
+   - Conversation history tracking
+   - Context management
+   - Message formatting for LLMs
+
+**Diagnostic Tools**:
+- **`diagnose_rag.py`**: Testing and debugging utilities
+  - Collection health checks
+  - Search quality testing
+  - Performance profiling
+
+#### Capabilities Summary
+
+**Query Types Supported**:
 - Natural language questions: "Show me all frustrated customers today"
 - Semantic search over historical behavior analysis
-- Filters: Time range, zone ID, person ID
+- Filters: Time range, zone ID, person ID, source type
 - Multi-turn conversations with history context
 - Summary generation for time periods or zones
+- Comparative analysis: "Compare zone 1 vs zone 2 occupancy"
+- Trend identification: "Show traffic patterns over the last week"
 
-**API Endpoints**:
-- `POST /rag/query`: Ask questions
+**Performance**:
+- Query latency: 1-3 seconds (depending on collection size)
+- Visualization generation: +0.5-1 second when needed
+- Supports up to 100K documents efficiently
+- Automatic result ranking by relevance
+
+**Data Sources Indexed**:
+1. Gemini behavior analysis reports (text-heavy insights)
+2. Dwell time records (structured metrics)
+3. Queue metrics (operational data)
+4. Alert logs (system events)
+5. Occupancy data (real-time snapshots)
+6. Zone analytics (aggregated statistics)
+
+#### API Endpoints
+
+**Standard RAG Endpoints**:
+- `POST /rag/query`: Ask questions (Gemini engine)
 - `POST /rag/index`: Index new data
 - `GET /rag/stats`: Get database statistics
 - `POST /rag/conversation`: Multi-turn dialogue
+- `POST /rag/summary`: Generate zone/time summaries
+- `DELETE /rag/reset`: Clear vector store
 
-### 5.7 Live Dashboard
+**Enhanced Query Options**:
+```python
+# Using Claude engine with all features
+POST /rag/query
+{
+  "query": "Show me frustrated customers in checkout",
+  "engine": "claude",  # or "gemini"
+  "n_results": 10,
+  "filters": {"zone_id": 3},
+  "session_id": "uuid-here",  # For conversation context
+  "generate_visualization": true
+}
+
+# Response includes:
+{
+  "answer": "Based on analysis...",
+  "sources": [...],
+  "visualization": "base64-encoded-chart",
+  "intent": {...},
+  "retrieved_docs": 10,
+  "performance": {"total_time": 2.1}
+}
+```
+
+#### Integration Examples
+
+**Python API Usage**:
+```python
+from rag import ClaudeQueryEngine, EmbeddingGenerator, VectorStore, ChatSession
+
+# Initialize
+embedder = EmbeddingGenerator()
+vector_store = VectorStore()
+engine = ClaudeQueryEngine(embedder, vector_store)
+
+# Create chat session
+session = ChatSession(session_id="user-123")
+
+# Query with session context
+result = engine.query(
+    "What happened in electronics today?",
+    session=session
+)
+
+# Add to session history
+session.add_message(result['question'], result['answer'])
+
+# Follow-up question with context
+result2 = engine.query(
+    "Were they satisfied?",  # Knows "they" refers to electronics customers
+    session=session
+)
+```
+
+**REST API Integration**:
+```bash
+# Query with Claude engine and visualization
+curl -X POST "http://localhost:8001/rag/query" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Show occupancy trends for zone 1 this week",
+    "engine": "claude",
+    "generate_visualization": true,
+    "filters": {"zone_id": 1}
+  }'
+```
+
+### 5.7 Customer Recognition & Re-identification
+
+**Technology**: Facial embedding-based recognition for returning customer identification
+
+**Capabilities**:
+- **Appearance Embedding**: Extracts facial features for customer matching
+- **Profile Management**: Automatic creation and updating of customer profiles
+- **Cross-Visit Tracking**: Identifies returning customers across multiple visits
+- **Visit Frequency Analysis**: Tracks visit patterns and frequency
+- **Purchase Likelihood Estimation**: ML-based prediction of purchase intent
+- **Personalized Recommendations**: Suggests approach strategies for sales staff
+- **Privacy Controls**: Customer opt-out functionality for compliance
+
+**Customer Insights**:
+- Customer value tier (regular, VIP, new)
+- Engagement level (high, medium, low)
+- Behavior patterns (browser, purposeful shopper)
+- Zone preferences
+- Average dwell time
+- Previous interactions with staff
+
+**API Endpoints**:
+- `GET /api/customers/{profile_uuid}`: Get customer profile
+- `POST /api/customers/{profile_uuid}/opt-out`: Privacy opt-out
+- `GET /api/customers/stats`: Overall customer statistics
+- `GET /api/customers/list`: List customers with filters
+- `GET /api/customers/recent-visits`: Recent visitor activity
+
+### 5.8 Staff Coordination System
+
+**Intelligent Alert Assignment**:
+The system automatically assigns alerts to the most suitable staff member using multi-factor scoring:
+
+**Scoring Factors**:
+1. **Distance to Zone**: Proximity-based scoring (closer staff prioritized)
+2. **Expertise Level**: Staff skill matching (e.g., electronics expert for tech products)
+3. **Current Workload**: Active assignments and capacity
+4. **Response Time History**: Past performance metrics
+5. **Availability Status**: Active vs break vs offline
+
+**Gemini-Powered Selection**:
+For complex scenarios, Gemini AI analyzes:
+- Alert context and urgency
+- Staff capabilities and specializations
+- Current store conditions
+- Historical success rates
+
+**Workload Balancing**:
+- Automatic redistribution when imbalances detected
+- Fair assignment distribution
+- Prevents staff overload
+
+**Performance Tracking**:
+- Assignment outcome tracking (success/failure/no_response)
+- Response time metrics
+- Success rate per staff member
+- Alert type specialization identification
+
+**API Endpoints**:
+- `POST /api/staff/{employee_id}/clock-in`: Staff availability
+- `POST /api/staff/{employee_id}/clock-out`: End shift
+- `GET /api/staff/{staff_id}/assignments`: View assignments
+- `POST /api/alerts/{alert_id}/complete`: Mark assignment complete
+- `GET /api/staff/list`: All staff members
+
+### 5.9 Advanced Detection Suite
+
+#### 5.9.1 Body Tracking System
+
+**Persistent Tracking Across Frames**:
+- **IoU-Based Matching**: Tracks bodies using Intersection over Union algorithm
+- **Unique Tracking IDs**: Each person gets persistent ID (e.g., "track_0001")
+- **Face Linking**: Automatically links tracking IDs to person IDs when faces detected
+- **Session Management**: Tracks entire customer journey from entry to exit
+
+**Track Lifecycle**:
+- Age tracking (frames since last detection)
+- Max age threshold (30 frames default) before removal
+- Total detection count per track
+- First seen / last seen timestamps
+
+**Person Sessions**:
+- Session start/end timestamps
+- Zones visited during session
+- Total detections in session
+- Active vs inactive session states
+- Automatic session closure on exit
+
+**Database Logging**:
+- `BodyDetectionEvent`: Individual detection events
+- `PersonSession`: Complete customer sessions
+- Links between tracking IDs and person IDs
+
+#### 5.9.2 Hand Gesture & Interaction Detection
+
+**Technology**: MediaPipe Hands (up to 4 hands simultaneously)
+
+**Gesture Classification**:
+- **Pointing**: 1 finger extended (indicating interest)
+- **Grabbing**: Fist (picking up product)
+- **Holding**: 2-3 fingers (examining product)
+- **Open Palm**: 4-5 fingers (reaching or placing)
+
+**Interaction Type Progression**:
+1. **Reaching**: Open palm approaching product
+2. **Touching**: Brief contact (< 1 second)
+3. **Picking Up**: Transition from open to grabbing
+4. **Examining**: Holding or pointing (2-10 seconds)
+5. **Putting Back**: Transition from grabbing to open
+
+**Hand Landmark Tracking**:
+- 21 keypoints per hand
+- Palm center calculation
+- Hand bounding box
+- Handedness detection (left/right)
+- Confidence scoring
+
+**Proximity-Based Detection**:
+- Configurable threshold (0.15 normalized distance default)
+- Zone-based interaction tracking
+- Distance to product calculation
+
+**Engagement Scoring**:
+- Gesture type weighting
+- Duration-based boosting
+- Interaction type progression scoring
+
+#### 5.9.3 Gaze Direction & Fixation Tracking
+
+**Technology**: MediaPipe Face Mesh (up to 4 faces)
+
+**Landmark Detection**:
+- 468 facial landmarks
+- 5 additional iris landmarks per eye (478 total)
+- High-precision eye tracking
+
+**Gaze Analysis**:
+- **Head Pose Estimation**: Pitch, yaw, roll angles
+- **Gaze Direction**: Calculated from iris position relative to eye
+- **Gaze Target Projection**: Where person is looking on 2D frame
+- **Fixation Detection**: Sustained gaze on target (0.5s+ duration)
+
+**Fixation Criteria**:
+- Minimum duration: 0.5 seconds (configurable)
+- Stability threshold: 15° maximum gaze change
+- Zone-based targeting
+
+**Gaze Features**:
+- Eye center calculation (left & right)
+- Direction angles (pitch, yaw, roll)
+- Target position in frame coordinates
+- Confidence scoring based on landmark quality
+
+**Applications**:
+- Product attention measurement
+- Display effectiveness tracking
+- Customer confusion detection (rapid gaze changes)
+- Interest level assessment
+
+**Database Logging**:
+- `GazeEvent`: Individual gaze events
+- Fixation duration and confidence
+- Target zone and position
+- Head pose and gaze direction vectors
+
+### 5.10 Product Detection & Interaction
+
+**Gemini-Powered Product Detection**:
+- Automatic product identification in zones
+- Product attributes extraction (name, category, price estimate)
+- Bounding box localization
+- Caching for performance optimization
+
+**Product Interaction Tracking**:
+Combines gaze detection + hand gestures for comprehensive interaction analysis:
+
+**Interaction Types**:
+- **Viewing**: Gaze fixation without hand interaction
+- **Touching**: Brief hand contact
+- **Picking Up**: Grabbing gesture
+- **Considering**: Extended examination (holding + gaze)
+- **Purchasing**: Product removed from zone
+
+**Engagement Score Calculation**:
+- Gaze duration weight
+- Hand interaction type weight
+- Interaction progression bonus
+- Time-based engagement boost
+
+**Product Metrics**:
+- Total interactions per product
+- Touch count
+- Pickup count
+- Consideration time
+- Conversion rate (pickups → purchases)
+
+**API Endpoints**:
+- `POST /api/inventory/detect`: Trigger product detection in zones
+- `GET /api/inventory/zone/{zone_id}/products`: Products in zone
+- `GET /api/inventory/interactions`: Product interaction history
+- `GET /api/inventory/analytics`: Product engagement metrics
+
+### 5.11 Zone Management REST API
+
+**Full CRUD Operations**:
+
+**Zone Management**:
+- `POST /api/zones`: Create new zone
+- `GET /api/zones`: List all zones (with active_only filter)
+- `GET /api/zones/{zone_id}`: Get specific zone
+- `PUT /api/zones/{zone_id}`: Update zone
+- `DELETE /api/zones/{zone_id}`: Delete/deactivate zone
+
+**Virtual Line Management**:
+- `POST /api/virtual-lines`: Create counting line
+- `GET /api/virtual-lines`: List all lines
+- `GET /api/virtual-lines/{line_id}`: Get specific line
+- `PUT /api/virtual-lines/{line_id}`: Update line
+- `DELETE /api/virtual-lines/{line_id}`: Delete line
+
+**Default Configurations**:
+- `POST /api/zones/create-defaults`: Initialize default zones from config
+- `POST /api/virtual-lines/create-defaults`: Initialize default lines
+
+**Zone Schema**:
+```json
+{
+  "name": "Electronics Section",
+  "zone_type": "product",
+  "polygon_points": [[0.2, 0.3], [0.5, 0.3], [0.5, 0.6], [0.2, 0.6]],
+  "color": "#FF5733",
+  "max_capacity": 15,
+  "is_active": true,
+  "priority": 1
+}
+```
+
+### 5.12 Manual Observation System
+
+**Purpose**: Allow staff to add manual notes and observations
+
+**Observation Creation**:
+- `POST /api/observations/person/{person_id}`: Add observation to person
+- `POST /api/observations/tracking/{tracking_id}`: Add observation to tracking ID
+
+**Timeline Views**:
+- `GET /api/timeline/person/{person_id}`: Person's complete timeline
+- `GET /api/timeline/tracking/{tracking_id}`: Tracking ID timeline
+- `GET /api/timeline/scene`: Scene-wide timeline (time-filtered)
+
+**Observation Types**:
+- Staff notes
+- Customer requests
+- Product inquiries
+- Behavioral observations
+- Special circumstances
+
+**Use Cases**:
+- Document customer conversations
+- Track product interest
+- Note VIP customers
+- Record special requests
+- Incident documentation
+
+### 5.13 Staff Location Tracking
+
+**Real-Time Location Streaming**:
+- WebSocket-based location updates
+- `WS /ws/staff/location/{employee_id}`: Individual staff location stream
+
+**Alert Routing**:
+- `POST /api/staff/send-alert`: Send alert to specific staff member
+- Nearest-staff routing for location-based alerts
+- Broadcast to all staff functionality
+
+**Connected Staff Monitoring**:
+- Active staff count
+- Connected staff IDs list
+- Availability status tracking
+
+**Integration with Alert System**:
+- Automatic routing to nearest available staff
+- Zone-based staff suggestions
+- Real-time location-aware assignments
+
+### 5.14 Live Dashboard
 
 **Layout**:
 - **Top Section**:
@@ -569,6 +1115,9 @@ Gemini analyzes complete context and generates 5-8 alerts per cycle:
 
 **Video Overlays** (Configurable):
 - Bounding boxes around detected people
+- Tracking IDs and person IDs
+- Hand gesture indicators
+- Gaze direction arrows
 - Trajectories (movement trails)
 - Zone boundaries with occupancy counts
 - Virtual counting lines with in/out counts
@@ -584,12 +1133,15 @@ Gemini analyzes complete context and generates 5-8 alerts per cycle:
 - Active Tracking (trajectories being tracked)
 - Entries Today (cumulative)
 - Active Zones (number of zones)
+- Product Interactions (live count)
+- Staff on Duty (active count)
 
 **Alert Banner**:
 - Priority-based color coding
 - Icon by category
 - Acknowledge/Dismiss actions
 - Person details expansion
+- Assigned staff indicator
 - Real-time updates via WebSocket
 
 **WebSocket Connections**:
@@ -597,6 +1149,9 @@ Gemini analyzes complete context and generates 5-8 alerts per cycle:
 - `/ws/analysis`: Gemini insights
 - `/ws/metrics`: Live metrics
 - `/ws/alerts`: Alert notifications
+- `/ws/inventory`: Product interaction updates
+- `/ws/customers`: Customer recognition events
+- `/ws/staff/location/{employee_id}`: Staff location tracking
 
 ---
 

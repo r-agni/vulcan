@@ -13,9 +13,9 @@ from dataclasses import dataclass
 import math
 
 try:
-    from .database import ProductInteraction
+    from app.core.database import ProductInteraction
 except ImportError:
-    from database import ProductInteraction
+    from app.core.database import ProductInteraction
 
 
 @dataclass

@@ -12,18 +12,19 @@ from datetime import datetime
 class VectorStore:
     """Manage vector database using ChromaDB"""
 
-    def __init__(self, persist_directory: str = "./data/chroma_db"):
+    def __init__(self, persist_directory: str = "./data/chroma_db", collection_name: str = None):
         """
         Initialize ChromaDB vector store
-        
+
         Args:
             persist_directory: Directory to persist the database
+            collection_name: Name of collection to use (default: videoai_analytics)
         """
         self.persist_directory = persist_directory
-        
+
         # Create directory if it doesn't exist
         os.makedirs(persist_directory, exist_ok=True)
-        
+
         # Initialize ChromaDB client with persistence
         self.client = chromadb.PersistentClient(
             path=persist_directory,
@@ -32,13 +33,17 @@ class VectorStore:
                 allow_reset=True
             )
         )
-        
+
         # Get or create collection
-        self.collection_name = "videoai_analytics"
+        self.collection_name = collection_name or "videoai_analytics"
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,
             metadata={"description": "Video AI analytics and Gemini analysis data"}
         )
+
+        # Support for multiple collections
+        self.collections = {}
+        self.collections[self.collection_name] = self.collection
 
     def add_documents(
         self,
@@ -212,10 +217,10 @@ class VectorStore:
     def peek(self, limit: int = 10) -> Dict[str, Any]:
         """
         Peek at the first few documents in the collection
-        
+
         Args:
             limit: Number of documents to peek at
-            
+
         Returns:
             Dictionary with documents
         """
@@ -225,3 +230,119 @@ class VectorStore:
         except Exception as e:
             print(f"Error peeking at documents: {e}")
             return {}
+
+    def get_or_create_collection(self, name: str, description: str = None) -> Any:
+        """
+        Get or create a named collection
+
+        Args:
+            name: Collection name
+            description: Collection description
+
+        Returns:
+            ChromaDB collection object
+        """
+        if name in self.collections:
+            return self.collections[name]
+
+        collection = self.client.get_or_create_collection(
+            name=name,
+            metadata={"description": description or f"Collection: {name}"}
+        )
+        self.collections[name] = collection
+        return collection
+
+    def switch_collection(self, name: str):
+        """
+        Switch active collection
+
+        Args:
+            name: Collection name to switch to
+        """
+        if name not in self.collections:
+            raise ValueError(f"Collection {name} not found. Use get_or_create_collection first.")
+
+        self.collection = self.collections[name]
+        self.collection_name = name
+
+    def query_collection(
+        self,
+        collection_name: str,
+        query_embedding: List[float],
+        n_results: int = 5,
+        where: Optional[Dict[str, Any]] = None,
+        where_document: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Query a specific collection
+
+        Args:
+            collection_name: Name of collection to query
+            query_embedding: Query vector embedding
+            n_results: Number of results to return
+            where: Metadata filter
+            where_document: Document content filter
+
+        Returns:
+            Dictionary with search results
+        """
+        if collection_name not in self.collections:
+            raise ValueError(f"Collection {collection_name} not found")
+
+        collection = self.collections[collection_name]
+
+        try:
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_results,
+                where=where,
+                where_document=where_document
+            )
+            return results
+        except Exception as e:
+            print(f"Error querying collection {collection_name}: {e}")
+            raise
+
+    def add_documents_to_collection(
+        self,
+        collection_name: str,
+        documents: List[str],
+        embeddings: List[List[float]],
+        metadatas: List[Dict[str, Any]],
+        ids: List[str]
+    ):
+        """
+        Add documents to a specific collection
+
+        Args:
+            collection_name: Target collection name
+            documents: List of document texts
+            embeddings: List of embedding vectors
+            metadatas: List of metadata dicts
+            ids: List of unique IDs
+        """
+        if collection_name not in self.collections:
+            raise ValueError(f"Collection {collection_name} not found")
+
+        collection = self.collections[collection_name]
+
+        try:
+            collection.add(
+                documents=documents,
+                embeddings=embeddings,
+                metadatas=metadatas,
+                ids=ids
+            )
+            print(f"Added {len(documents)} documents to collection '{collection_name}'")
+        except Exception as e:
+            print(f"Error adding documents to collection {collection_name}: {e}")
+            raise
+
+    def list_collections(self) -> List[str]:
+        """
+        List all available collections
+
+        Returns:
+            List of collection names
+        """
+        return list(self.collections.keys())

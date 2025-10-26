@@ -5,11 +5,11 @@ import pickle
 from datetime import datetime
 from sqlalchemy.orm import Session
 try:
-    from .database import Person, DetectionEvent
-    from .activity_logger import log_activity
+    from app.core.database import Person, DetectionEvent
+    from app.utils.activity_logger import log_activity
 except ImportError:
-    from database import Person, DetectionEvent
-    from activity_logger import log_activity
+    from app.core.database import Person, DetectionEvent
+    from app.utils.activity_logger import log_activity
 import os
 import torch
 from facenet_pytorch import MTCNN, InceptionResnetV1

@@ -15,7 +15,7 @@ import os
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.database import StaffMember, StaffLocation, AlertAssignment, StaffPerformanceMetrics
+from app.core.database import StaffMember, StaffLocation, AlertAssignment, StaffPerformanceMetrics
 
 
 @dataclass

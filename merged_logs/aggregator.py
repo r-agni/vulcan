@@ -239,20 +239,55 @@ def collect_analytics_snapshot(
     snapshot['interaction_count'] = len(active_interactions_data)
     snapshot['total_interactions_today'] = 0  # Would need cumulative counter
 
+    # Hand Gesture Summary
+    hand_gestures_summary = {
+        'pointing': 0,
+        'grabbing': 0,
+        'holding': 0,
+        'open_palm': 0,
+        'total': 0
+    }
+
+    try:
+        # Aggregate from active_interactions
+        for interaction in active_interactions_data:
+            gesture = interaction.get('gesture')
+            if gesture in hand_gestures_summary:
+                hand_gestures_summary[gesture] += 1
+                hand_gestures_summary['total'] += 1
+    except Exception as e:
+        print(f"Error collecting gesture data: {e}")
+
+    snapshot['hand_gestures_summary'] = hand_gestures_summary
+
     # Gaze/Attention Data
     active_gaze_data = []
     gaze_fixation_count = 0
+    total_gaze_events_today = 0
 
     try:
-        # Would need gaze detector to expose active fixations
-        # Placeholder for now
-        pass
+        # Get active fixations from gaze_detector
+        if gaze_detector and hasattr(gaze_detector, 'active_fixations'):
+            for tracking_id, fixation_data in gaze_detector.active_fixations.items():
+                active_gaze_data.append({
+                    'tracking_id': tracking_id,
+                    'target_zone': fixation_data.get('target_zone'),
+                    'target_product': fixation_data.get('target_product'),
+                    'gaze_direction': fixation_data.get('gaze_direction'),
+                    'fixation_duration': fixation_data.get('fixation_duration_seconds', 0),
+                    'confidence': fixation_data.get('confidence_score', 0)
+                })
+                gaze_fixation_count += 1
+
+        # Get total gaze events from counter (if available)
+        if gaze_detector and hasattr(gaze_detector, 'total_fixations_today'):
+            total_gaze_events_today = gaze_detector.total_fixations_today
     except Exception as e:
         print(f"Error collecting gaze data: {e}")
 
     snapshot['active_gaze_events'] = active_gaze_data
     snapshot['gaze_fixation_count'] = gaze_fixation_count
-    snapshot['total_gaze_events_today'] = 0  # Would need cumulative counter
+    snapshot['total_gaze_events_today'] = total_gaze_events_today
 
     # AI Analysis (Gemini)
     snapshot['gemini_analysis_text'] = gemini_analysis_text
@@ -288,7 +323,7 @@ def collect_analytics_snapshot(
             alerts = alert_manager.get_active_alerts()
             for alert in alerts:
                 active_alerts_data.append({
-                    'alert_id': alert.alert_id,
+                    'alert_id': alert.id,
                     'priority': alert.priority.value if hasattr(alert.priority, 'value') else str(alert.priority),
                     'category': alert.category.value if hasattr(alert.category, 'value') else str(alert.category),
                     'message': alert.message,
@@ -308,6 +343,47 @@ def collect_analytics_snapshot(
     snapshot['total_sessions_today'] = 0  # Would need cumulative counter
     snapshot['total_alerts_today'] = 0  # Would need cumulative counter
     snapshot['total_events_today'] = 0  # Would need cumulative counter
+
+    # ==================== CUSTOMER RECOGNITION DATA ====================
+    customer_recognition_summary = {
+        'total_recognized': 0,
+        'vip_customers_present': 0,
+        'new_customers': 0,
+        'returning_customers': 0,
+        'recognition_rate': 0.0
+    }
+
+    try:
+        if db_session:
+            from app.core.database import CustomerProfile, CustomerVisit
+            from datetime import timedelta
+
+            # Active visitors (last hour)
+            active_cutoff = datetime.utcnow() - timedelta(hours=1)
+            active_profiles = db_session.query(CustomerProfile).filter(
+                CustomerProfile.last_visit >= active_cutoff,
+                CustomerProfile.opt_out_date == None
+            ).all()
+
+            customer_recognition_summary['total_recognized'] = len(active_profiles)
+            customer_recognition_summary['vip_customers_present'] = sum(
+                1 for p in active_profiles if p.vip_status
+            )
+            customer_recognition_summary['returning_customers'] = sum(
+                1 for p in active_profiles if p.total_visits > 1
+            )
+            customer_recognition_summary['new_customers'] = sum(
+                1 for p in active_profiles if p.total_visits == 1
+            )
+
+            if snapshot['detection_count'] > 0:
+                customer_recognition_summary['recognition_rate'] = (
+                    customer_recognition_summary['total_recognized'] / snapshot['detection_count']
+                )
+    except Exception as e:
+        print(f"Error collecting customer recognition data: {e}")
+
+    snapshot['customer_recognition_summary'] = customer_recognition_summary
 
     # ==================== PRODUCT INVENTORY DATA ====================
     snapshot.update(collect_product_metrics(

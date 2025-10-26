@@ -13,9 +13,9 @@ from dataclasses import dataclass
 import math
 
 try:
-    from .database import GazeEvent
+    from app.core.database import GazeEvent
 except ImportError:
-    from database import GazeEvent
+    from app.core.database import GazeEvent
 
 
 @dataclass
