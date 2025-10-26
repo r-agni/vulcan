@@ -1,0 +1,41 @@
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 2rem;
+    background: rgba(20, 20, 20, 0.9);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.title {
+    font-size: 2rem;
+    font-style: italic;
+    color: var(--accent);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.toggleControls {
+    display: flex;
+    gap: 1rem;
+}
+
+.toggleBtn {
+    background: linear-gradient(135deg, rgba(74, 144, 226, 0.15) 0%, rgba(53, 122, 189, 0.15) 100%);
+    border: 1px solid rgba(74, 144, 226, 0.3);
+    color: var(--text-primary);
+    padding: 0.6rem 1.2rem;
+    font-family: 'Playfair Display', serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-radius: 6px;
+}
+
+.toggleBtn:hover {
+    background: linear-gradient(135deg, rgba(74, 144, 226, 0.25) 0%, rgba(53, 122, 189, 0.25) 100%);
+    border-color: rgba(74, 144, 226, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(74, 144, 226, 0.2);
+}

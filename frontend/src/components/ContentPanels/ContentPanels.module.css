@@ -1,0 +1,180 @@
+.contentPanels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 20px;
+  padding: 20px;
+}
+
+.panel {
+  background: rgba(20, 20, 20, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  backdrop-filter: blur(10px);
+}
+
+.panelTitle {
+  font-family: 'Playfair Display', serif;
+  font-size: 24px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 16px 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.subTitle {
+  font-family: 'Playfair Display', serif;
+  font-size: 18px;
+  font-weight: 500;
+  color: #ccc;
+  margin: 16px 0 12px 0;
+}
+
+/* Activity Feed */
+.activityList {
+  max-height: 400px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.activityList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.activityList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.activityList::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.activityItem {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.activityItem:last-child {
+  border-bottom: none;
+}
+
+.activityTime {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 12px;
+  color: #888;
+  flex-shrink: 0;
+  min-width: 80px;
+}
+
+.activityMessage {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 14px;
+  color: #ccc;
+  line-height: 1.4;
+}
+
+/* Analysis Panel */
+.analysisContent {
+  min-height: 150px;
+}
+
+.analysisText {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #ddd;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* Stats Grid */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.statCard {
+  background: rgba(30, 30, 30, 0.5);
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.statLabel {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.statValue {
+  font-family: 'Playfair Display', serif;
+  font-size: 28px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* Product List */
+.productList {
+  margin-top: 16px;
+}
+
+.productItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.productItem:last-child {
+  border-bottom: none;
+}
+
+.productName {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 14px;
+  color: #ddd;
+}
+
+.productViews {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 13px;
+  color: #888;
+}
+
+/* Empty State */
+.emptyState {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 14px;
+  color: #666;
+  text-align: center;
+  padding: 40px 20px;
+  font-style: italic;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .contentPanels {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .statsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .panelTitle {
+    font-size: 20px;
+  }
+}
