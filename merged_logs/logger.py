@@ -4,9 +4,11 @@ Handles saving data to the merged_logs database
 """
 
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 import pickle
 from sqlalchemy.orm import Session
+import threading
+import queue
 
 from .database import Users, CameraRoom, SessionLocal
 
@@ -16,6 +18,9 @@ class MergedLogger:
 
     def __init__(self):
         self.db_session: Optional[Session] = None
+        self.rag_indexing_callback: Optional[Callable] = None
+        self.indexing_queue: queue.Queue = queue.Queue(maxsize=100)
+        self.indexing_enabled: bool = False
 
     def get_session(self) -> Session:
         """Get or create database session"""
@@ -28,6 +33,50 @@ class MergedLogger:
         if self.db_session:
             self.db_session.close()
             self.db_session = None
+
+    def enable_rag_indexing(self, callback: Optional[Callable] = None):
+        """
+        Enable automatic RAG indexing after each snapshot save
+
+        Args:
+            callback: Optional callback function to call for indexing.
+                     If None, will trigger incremental indexing via queue.
+        """
+        self.indexing_enabled = True
+        self.rag_indexing_callback = callback
+        print("✓ RAG auto-indexing enabled")
+
+    def disable_rag_indexing(self):
+        """Disable automatic RAG indexing"""
+        self.indexing_enabled = False
+        print("✗ RAG auto-indexing disabled")
+
+    def _trigger_rag_indexing(self, snapshot_id: int):
+        """
+        Trigger RAG indexing for a new snapshot (non-blocking)
+
+        Args:
+            snapshot_id: ID of the camera_room record to index
+        """
+        if not self.indexing_enabled:
+            return
+
+        try:
+            # Add to queue for background indexing
+            if not self.indexing_queue.full():
+                self.indexing_queue.put(snapshot_id, block=False)
+
+            # Call callback if provided
+            if self.rag_indexing_callback:
+                # Run callback in background thread to avoid blocking
+                thread = threading.Thread(
+                    target=self.rag_indexing_callback,
+                    args=(snapshot_id,),
+                    daemon=True
+                )
+                thread.start()
+        except Exception as e:
+            print(f"Warning: RAG indexing trigger failed: {e}")
 
     def save_camera_snapshot(self, snapshot_data: Dict[str, Any]) -> Optional[CameraRoom]:
         """
@@ -141,6 +190,9 @@ class MergedLogger:
             db.add(camera_record)
             db.commit()
             db.refresh(camera_record)
+
+            # Trigger RAG indexing for this snapshot
+            self._trigger_rag_indexing(camera_record.id)
 
             return camera_record
 

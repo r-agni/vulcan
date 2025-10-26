@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import styles from './ContentPanels.module.css';
 import useDashboardStore from '../../store/dashboardStore';
 import useInventory from '../../hooks/useInventory';
 import useCustomers from '../../hooks/useCustomers';
 import useAnalysis from '../../hooks/useAnalysis';
 import ChatPanel from '../ChatPanel/ChatPanel';
+import ObservationsPanel from '../ObservationsPanel/ObservationsPanel';
 
 function ContentPanels() {
   const { activities, analysisText, inventory, customers } = useDashboardStore();
+  const [showObservations, setShowObservations] = useState(false);
+  const [observationTarget, setObservationTarget] = useState(null);
 
   // Connect to WebSocket streams
   useInventory();
@@ -107,6 +111,40 @@ function ContentPanels() {
       <div className={`${styles.panel} ${styles.chatPanelContainer}`}>
         <ChatPanel />
       </div>
+
+      {/* Quick Actions */}
+      <div className={styles.panel}>
+        <h2 className={styles.panelTitle}>Quick Actions</h2>
+        <div className={styles.actionsGrid}>
+          <button
+            onClick={() => {
+              const personId = prompt('Enter Person ID:');
+              if (personId) {
+                setObservationTarget({ personId: parseInt(personId) });
+                setShowObservations(true);
+              }
+            }}
+            className={styles.actionButton}
+          >
+            Add Observation
+          </button>
+        </div>
+      </div>
+
+      {/* Observations Modal */}
+      {showObservations && observationTarget && (
+        <ObservationsPanel
+          personId={observationTarget.personId}
+          trackingId={observationTarget.trackingId}
+          onClose={() => {
+            setShowObservations(false);
+            setObservationTarget(null);
+          }}
+          onSaved={() => {
+            // Refresh or notify
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,21 +1,20 @@
 /* ============================================
    Video AI Surveillance Dashboard - Global Styles
-   Elegant Monochrome Design with Cursive Fonts
+   Pure Black & White High-Contrast Design
    ============================================ */
 
-/* Color Palette */
+/* Color Palette - Pure Black & White Only */
 :root {
-    --bg-primary: #0a0a0a;
-    --bg-secondary: #1a1a1a;
-    --bg-tertiary: #252525;
-    --text-primary: #e8e8e8;
-    --text-secondary: #b0b0b0;
-    --text-tertiary: #808080;
+    --bg-primary: #000000;
+    --bg-secondary: #000000;
+    --bg-tertiary: #000000;
+    --text-primary: #ffffff;
+    --text-secondary: #ffffff;
+    --text-tertiary: #ffffff;
     --accent: #ffffff;
-    --border: #2a2a2a;
-    --hover: #333333;
-    --blue-accent: #4A90E2;
-    --blue-accent-dark: #357ABD;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.2);
+    --hover: rgba(255, 255, 255, 0.05);
 }
 
 /* Reset & Base Styles */
@@ -59,16 +58,16 @@ h3 {
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--bg-secondary);
+    background: #000000;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--border);
+    background: rgba(255, 255, 255, 0.2);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--hover);
+    background: rgba(255, 255, 255, 0.3);
 }
 
 /* Animations */

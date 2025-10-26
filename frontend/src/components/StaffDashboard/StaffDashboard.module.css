@@ -1,0 +1,283 @@
+.staffDashboard {
+  background: #000000;
+  border-radius: 12px;
+  padding: 24px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Cormorant Garamond', serif;
+}
+
+.header {
+  margin-bottom: 24px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 16px 0;
+  font-family: 'Playfair Display', serif;
+}
+
+.stats {
+  display: flex;
+  gap: 16px;
+}
+
+.statCard {
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.statValue {
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: 'Playfair Display', serif;
+}
+
+.statLabel {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.staffList,
+.assignmentsPanel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 16px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: 'Playfair Display', serif;
+}
+
+.staffCard {
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.staffCard:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateX(4px);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.staffCard.selected {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.staffInfo {
+  margin-bottom: 12px;
+}
+
+.staffName {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.statusDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.statusDot.onDuty {
+  background: #ffffff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+}
+
+.statusDot.offDuty {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.staffRole {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 4px;
+}
+
+.staffId {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.staffActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shiftInfo {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.clockInButton,
+.clockOutButton {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Cormorant Garamond', serif;
+}
+
+.clockInButton {
+  background: #ffffff;
+  color: #000000;
+}
+
+.clockInButton:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.clockOutButton {
+  background: #ffffff;
+  color: #000000;
+}
+
+.clockOutButton:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.assignmentsList {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.assignmentCard {
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.assignmentHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.alertId {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.elapsed {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.assignmentTime {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 12px;
+}
+
+.assignmentActions {
+  display: flex;
+  gap: 8px;
+}
+
+.completeButton,
+.failButton {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Cormorant Garamond', serif;
+}
+
+.completeButton {
+  background: #ffffff;
+  color: #000000;
+}
+
+.completeButton:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.failButton {
+  background: #ffffff;
+  color: #000000;
+}
+
+.failButton:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.emptyState {
+  text-align: center;
+  padding: 40px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+}
+
+.loading {
+  padding: 40px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Scrollbar styling */
+.assignmentsList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.assignmentsList::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+.assignmentsList::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.assignmentsList::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}

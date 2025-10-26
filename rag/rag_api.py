@@ -348,6 +348,51 @@ def create_rag_router():
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to list sessions: {str(e)}")
 
+    @router.get("/indexing/stats")
+    async def get_indexing_stats():
+        """
+        Get RAG indexing service statistics
+        """
+        try:
+            from .rag_indexing_service import get_rag_indexing_service
+            service = get_rag_indexing_service()
+
+            if service is None:
+                return {
+                    "status": "not_running",
+                    "message": "RAG indexing service not initialized"
+                }
+
+            stats = service.get_stats()
+            return {
+                "status": "running",
+                "stats": stats
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+
+    @router.post("/indexing/reindex")
+    async def trigger_manual_reindex():
+        """
+        Manually trigger a full re-index of recent data
+        """
+        try:
+            from .rag_indexing_service import get_rag_indexing_service
+            service = get_rag_indexing_service()
+
+            if service is None:
+                raise HTTPException(status_code=503, detail="RAG indexing service not initialized")
+
+            service.trigger_full_reindex()
+            return {
+                "status": "triggered",
+                "message": "Full re-index started in background"
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to trigger reindex: {str(e)}")
+
     @router.post("/index/merged_logs")
     async def index_merged_logs(request: IndexMergedLogsRequest, db: Session = Depends(get_db)):
         """

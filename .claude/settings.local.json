@@ -28,7 +28,8 @@
       "Bash(npm run dev:*)",
       "Bash(set PYTHONPATH=%CD%)",
       "Bash(pip install:*)",
-      "Bash(pip uninstall:*)"
+      "Bash(pip uninstall:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []

@@ -626,6 +626,149 @@ Gemini Analysis:
             "analysis": len(analysis_docs)
         }
 
+    def index_single_snapshot(
+        self,
+        snapshot_id: int,
+        db_path: str = "./merged_logs.db",
+        metadata_collection: str = "metadata_collection",
+        analysis_collection: str = "analysis_collection"
+    ) -> Dict[str, int]:
+        """
+        Index a single snapshot from merged_logs.db (for incremental updates)
+
+        Args:
+            snapshot_id: ID of the camera_room record to index
+            db_path: Path to merged_logs.db
+            metadata_collection: Name for metadata vector collection
+            analysis_collection: Name for analysis vector collection
+
+        Returns:
+            Dictionary with counts for each collection
+        """
+        # Create collections if they don't exist
+        self.vector_store.get_or_create_collection(
+            metadata_collection,
+            "Structured metadata from camera_room table"
+        )
+        self.vector_store.get_or_create_collection(
+            analysis_collection,
+            "Gemini verbal analysis from camera_room table"
+        )
+
+        # Connect to merged_logs.db
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Query specific snapshot
+        cursor.execute("SELECT * FROM camera_room WHERE id = ?", (snapshot_id,))
+        record = cursor.fetchone()
+
+        if not record:
+            conn.close()
+            return {"metadata": 0, "analysis": 0}
+
+        metadata_count = 0
+        analysis_count = 0
+
+        try:
+            record_dict = dict(record)
+            record_id = record_dict.get('id')
+            timestamp = record_dict.get('timestamp', '')
+
+            # 1. Index METADATA
+            metadata_fields = {
+                'id': record_dict.get('id'),
+                'timestamp': timestamp,
+                'camera_name': record_dict.get('camera_name'),
+                'room_name': record_dict.get('room_name'),
+                'occupancy': record_dict.get('occupancy'),
+                'peak_today': record_dict.get('peak_today'),
+                'avg_dwell_time': record_dict.get('avg_dwell_time'),
+                'active_trajectories': record_dict.get('active_trajectories'),
+                'total_entries': record_dict.get('total_entries'),
+                'detection_count': record_dict.get('detection_count'),
+                'face_detection_count': record_dict.get('face_detection_count'),
+                'session_count': record_dict.get('session_count'),
+                'line_crossings_in': record_dict.get('line_crossings_in'),
+                'line_crossings_out': record_dict.get('line_crossings_out'),
+                'queue_count': record_dict.get('queue_count'),
+                'interaction_count': record_dict.get('interaction_count'),
+                'gaze_fixation_count': record_dict.get('gaze_fixation_count'),
+                'crowd_density': record_dict.get('crowd_density'),
+                'energy_level': record_dict.get('energy_level'),
+                'event_count': record_dict.get('event_count'),
+                'alert_count': record_dict.get('alert_count')
+            }
+
+            metadata_text = f"""
+Timestamp: {timestamp}
+Camera: {record_dict.get('camera_name')} in {record_dict.get('room_name')}
+Occupancy: {record_dict.get('occupancy')} (Peak: {record_dict.get('peak_today')})
+Avg Dwell Time: {record_dict.get('avg_dwell_time')}s
+Trajectories: {record_dict.get('active_trajectories')}
+Entries: {record_dict.get('total_entries')}
+Detections: {record_dict.get('detection_count')}
+Line Crossings: {record_dict.get('line_crossings_in')} in / {record_dict.get('line_crossings_out')} out
+Queue Count: {record_dict.get('queue_count')}
+Interactions: {record_dict.get('interaction_count')}
+Alerts: {record_dict.get('alert_count')}
+"""
+
+            metadata_embedding = self.embedder.embed_text(metadata_text)
+
+            self.vector_store.add_documents_to_collection(
+                metadata_collection,
+                [metadata_text],
+                [metadata_embedding],
+                [{
+                    "source": "merged_logs_metadata",
+                    "record_id": record_id,
+                    "timestamp": timestamp,
+                    **{k: v for k, v in metadata_fields.items() if v is not None}
+                }],
+                [f"metadata_{record_id}"]
+            )
+            metadata_count = 1
+
+            # 2. Index ANALYSIS if present
+            gemini_analysis = record_dict.get('gemini_analysis_text')
+            if gemini_analysis and gemini_analysis.strip():
+                analysis_text = f"""
+Timestamp: {timestamp}
+Camera: {record_dict.get('camera_name')}
+
+Gemini AI Analysis:
+{gemini_analysis}
+"""
+
+                analysis_embedding = self.embedder.embed_text(analysis_text)
+
+                self.vector_store.add_documents_to_collection(
+                    analysis_collection,
+                    [analysis_text],
+                    [analysis_embedding],
+                    [{
+                        "source": "merged_logs_analysis",
+                        "record_id": record_id,
+                        "timestamp": timestamp,
+                        "camera_name": record_dict.get('camera_name'),
+                        "room_name": record_dict.get('room_name')
+                    }],
+                    [f"analysis_{record_id}"]
+                )
+                analysis_count = 1
+
+        except Exception as e:
+            print(f"Error indexing snapshot {snapshot_id}: {e}")
+
+        conn.close()
+
+        return {
+            "metadata": metadata_count,
+            "analysis": analysis_count
+        }
+
     def index_all(self, reports_directory: str = "./data/analysis_results/reports") -> Dict[str, int]:
         """
         Index all data sources

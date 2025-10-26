@@ -25,12 +25,16 @@ from Agent import AlertGenerator, AlertManager
 
 # Import RAG system
 from rag.rag_api import create_rag_router
+from rag.embeddings import EmbeddingGenerator
+from rag.vector_store import VectorStore
+from rag.rag_indexing_service import initialize_rag_indexing_service, get_rag_indexing_service
 
 # Import Staff Location Tracker
 from app.tracking.staff_location_tracker import router as staff_location_router
 
 # Import Merged Logs System
 from merged_logs import init_merged_db, collect_analytics_snapshot, MergedLogger
+from app.core.database import SessionLocal as get_db_session
 
 # Import Product Inventory System
 from app.inventory import ProductDetector, ProductInteractionTracker
@@ -456,6 +460,34 @@ async def startup_event():
         log_activity("✓ Merged logs database initialized", "system")
     except Exception as e:
         log_activity(f"❌ Error initializing merged logs: {str(e)}", "system")
+
+    # Initialize RAG indexing service
+    try:
+        embedder = EmbeddingGenerator()
+        vector_store = VectorStore()
+
+        # Initialize RAG indexing service with:
+        # - Batch size: 10 snapshots
+        # - Batch interval: 30 seconds
+        # - Full reindex: every 1 hour (3600 seconds)
+        rag_service = initialize_rag_indexing_service(
+            embedder=embedder,
+            vector_store=vector_store,
+            db_session_factory=get_db_session,
+            batch_size=10,
+            batch_interval=30.0,
+            full_reindex_interval=3600.0
+        )
+
+        # Enable automatic RAG indexing in merged logger
+        merged_logger.enable_rag_indexing(
+            callback=lambda snapshot_id: rag_service.queue_snapshot(snapshot_id)
+        )
+
+        log_activity("✓ RAG auto-indexing enabled", "system")
+    except Exception as e:
+        log_activity(f"⚠️ RAG indexing service init failed: {str(e)}", "system")
+        print(f"RAG indexing error: {e}")
 
     # Create directories
     os.makedirs("data/uploads/frames", exist_ok=True)
