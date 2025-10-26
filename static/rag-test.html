@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG System Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        h1 {
+            color: #4A90E2;
+        }
+        .test-section {
+            background: #2a2a2a;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        input, button {
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 16px;
+        }
+        input {
+            width: calc(100% - 24px);
+            background: #333;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 4px;
+        }
+        button {
+            background: #4A90E2;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+            padding: 10px 20px;
+        }
+        button:hover {
+            background: #3a7bc2;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        #response {
+            background: #1a1a1a;
+            padding: 15px;
+            margin-top: 10px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            min-height: 100px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .status.success {
+            background: #2d5016;
+            border: 1px solid #4a8028;
+        }
+        .status.error {
+            background: #5d1616;
+            border: 1px solid #a02828;
+        }
+        .status.info {
+            background: #1a3d5d;
+            border: 1px solid #2a5d8a;
+        }
+        .log-output {
+            background: #0a0a0a;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>RAG System Diagnostic Test</h1>
+
+    <div class="test-section">
+        <h2>1. Check Vector Store Status</h2>
+        <button onclick="checkStats()">Get Stats</button>
+        <div id="stats-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. Peek at Documents</h2>
+        <button onclick="peekDocuments()">Peek Documents (limit 5)</button>
+        <div id="peek-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Test Query</h2>
+        <input type="text" id="query-input" placeholder="Enter your question..." value="What are the customer patterns?">
+        <button onclick="testQuery()" id="query-btn">Run Query</button>
+        <div id="query-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Console Logs</h2>
+        <div class="log-output" id="console-log"></div>
+    </div>
+
+    <script>
+        const logDiv = document.getElementById('console-log');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.style.color = type === 'error' ? '#ff6b6b' : type === 'success' ? '#51cf66' : '#4dabf7';
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        async function checkStats() {
+            const resultDiv = document.getElementById('stats-result');
+            resultDiv.innerHTML = '<div class="status info">Loading...</div>';
+            log('Checking vector store stats...');
+
+            try {
+                const response = await fetch('/rag/stats');
+                const data = await response.json();
+
+                if (response.ok) {
+                    log('Stats retrieved successfully', 'success');
+                    resultDiv.innerHTML = `
+                        <div class="status success">
+                            <strong>Vector Store Stats:</strong><br>
+                            Collection: ${data.collection_name}<br>
+                            Total Documents: ${data.total_documents}<br>
+                            Directory: ${data.persist_directory}<br>
+                            Last Updated: ${data.last_updated}
+                        </div>
+                    `;
+
+                    if (data.total_documents === 0) {
+                        resultDiv.innerHTML += `
+                            <div class="status error">
+                                ⚠️ No documents found! You need to index data first.<br>
+                                Run: POST /rag/index
+                            </div>
+                        `;
+                    }
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${data.detail || 'Unknown error'}`);
+                }
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+                resultDiv.innerHTML = `<div class="status error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function peekDocuments() {
+            const resultDiv = document.getElementById('peek-result');
+            resultDiv.innerHTML = '<div class="status info">Loading...</div>';
+            log('Peeking at documents...');
+
+            try {
+                const response = await fetch('/rag/peek?limit=5');
+                const data = await response.json();
+
+                if (response.ok) {
+                    log(`Found ${data.ids ? data.ids.length : 0} documents`, 'success');
+
+                    if (data.ids && data.ids.length > 0) {
+                        let html = '<div class="status success"><strong>Sample Documents:</strong><br><br>';
+
+                        for (let i = 0; i < data.ids.length; i++) {
+                            const meta = data.metadatas ? data.metadatas[i] : {};
+                            const doc = data.documents ? data.documents[i] : 'N/A';
+
+                            html += `<strong>Document ${i + 1}</strong><br>`;
+                            html += `ID: ${data.ids[i]}<br>`;
+                            html += `Source: ${meta.source || 'N/A'}<br>`;
+                            html += `Preview: ${doc.substring(0, 100)}...<br><br>`;
+                        }
+
+                        html += '</div>';
+                        resultDiv.innerHTML = html;
+                    } else {
+                        resultDiv.innerHTML = '<div class="status error">No documents found in vector store</div>';
+                    }
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+                resultDiv.innerHTML = `<div class="status error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testQuery() {
+            const queryInput = document.getElementById('query-input');
+            const queryBtn = document.getElementById('query-btn');
+            const resultDiv = document.getElementById('query-result');
+
+            const query = queryInput.value.trim();
+            if (!query) {
+                alert('Please enter a question');
+                return;
+            }
+
+            queryBtn.disabled = true;
+            resultDiv.innerHTML = '<div class="status info">Processing query...</div>';
+            log(`Query: ${query}`);
+
+            const startTime = Date.now();
+
+            try {
+                const response = await fetch('/rag/query', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        query: query,
+                        n_results: 5
+                    })
+                });
+
+                const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+                log(`Response received in ${duration}s`);
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    log('Query successful', 'success');
+
+                    let html = `<div class="status success">`;
+                    html += `<strong>Query Time:</strong> ${duration}s<br>`;
+                    html += `<strong>Documents Retrieved:</strong> ${data.retrieved_docs || 0}<br>`;
+
+                    if (data.performance) {
+                        html += `<strong>Search Time:</strong> ${data.performance.search_time}s<br>`;
+                        html += `<strong>Answer Time:</strong> ${data.performance.answer_time}s<br>`;
+                    }
+
+                    html += `</div>`;
+
+                    if (data.answer) {
+                        html += `<div id="response">${data.answer}</div>`;
+                        log(`Answer length: ${data.answer.length} characters`);
+                    } else {
+                        html += '<div class="status error">No answer generated</div>';
+                        log('No answer in response', 'error');
+                    }
+
+                    resultDiv.innerHTML = html;
+                } else {
+                    throw new Error(data.detail || 'Query failed');
+                }
+            } catch (error) {
+                log(`Error: ${error.message}`, 'error');
+                resultDiv.innerHTML = `<div class="status error">Error: ${error.message}</div>`;
+            } finally {
+                queryBtn.disabled = false;
+            }
+        }
+
+        // Auto-run stats check on load
+        window.addEventListener('DOMContentLoaded', () => {
+            log('RAG Test page loaded', 'success');
+            checkStats();
+        });
+    </script>
+</body>
+</html>

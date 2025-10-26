@@ -133,13 +133,44 @@ INSTRUCTIONS:
 ANSWER:"""
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt
-            )
-            return response.text
+            # Add timeout and retry logic
+            import time
+            max_retries = 2
+            retry_delay = 1
+
+            for attempt in range(max_retries):
+                try:
+                    response = self.client.models.generate_content(
+                        model=self.model,
+                        contents=prompt
+                    )
+
+                    if hasattr(response, 'text') and response.text:
+                        return response.text
+                    else:
+                        return "Unable to generate a response. Please try again."
+
+                except Exception as api_error:
+                    if attempt < max_retries - 1:
+                        print(f"[RAG Query] Gemini API error on attempt {attempt + 1}, retrying in {retry_delay}s: {str(api_error)}")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        raise api_error
+
         except Exception as e:
-            return f"Error generating answer: {str(e)}"
+            error_msg = str(e)
+            print(f"[RAG Query] Error generating answer: {error_msg}")
+
+            # Provide helpful error messages
+            if "quota" in error_msg.lower() or "rate" in error_msg.lower():
+                return "⚠️ API rate limit reached. Please wait a moment and try again."
+            elif "timeout" in error_msg.lower():
+                return "⚠️ Request timed out. Please try a simpler question or try again later."
+            elif "api" in error_msg.lower() or "key" in error_msg.lower():
+                return "⚠️ API configuration error. Please check your Gemini API key settings."
+            else:
+                return f"⚠️ Error generating answer: {error_msg}"
 
     def query(
         self,
@@ -149,40 +180,50 @@ ANSWER:"""
     ) -> Dict[str, Any]:
         """
         Complete query pipeline: search + answer generation
-        
+
         Args:
             question: User's question
             n_results: Number of documents to retrieve
             filters: Metadata filters
-            
+
         Returns:
             Dictionary with answer and sources
         """
-        print(f"\nProcessing query: {question}")
-        print(f"Retrieving top {n_results} relevant documents...")
-        
+        import time
+        start_time = time.time()
+
+        print(f"\n[RAG Query] Processing: {question}")
+        print(f"[RAG Query] Retrieving top {n_results} relevant documents...")
+
         # Search for relevant documents
+        search_start = time.time()
         search_results = self.search(question, n_results, filters)
-        
+        search_time = time.time() - search_start
+        print(f"[RAG Query] Vector search completed in {search_time:.2f}s")
+
         # Extract results
         documents = search_results['documents'][0] if search_results['documents'] else []
         metadatas = search_results['metadatas'][0] if search_results['metadatas'] else []
         distances = search_results['distances'][0] if search_results['distances'] else []
-        
+
         if not documents:
+            print("[RAG Query] No documents found in vector store")
             return {
                 "question": question,
                 "answer": "No relevant information found in the database. Please try rephrasing your question or check if data has been indexed.",
                 "sources": [],
                 "retrieved_docs": 0
             }
-        
-        print(f"Retrieved {len(documents)} documents")
-        print("Generating answer with Gemini...")
-        
+
+        print(f"[RAG Query] Retrieved {len(documents)} documents")
+        print("[RAG Query] Generating answer with Gemini...")
+
         # Generate answer
+        answer_start = time.time()
         answer = self.generate_answer(question, documents, metadatas)
-        
+        answer_time = time.time() - answer_start
+        print(f"[RAG Query] Answer generated in {answer_time:.2f}s")
+
         # Format sources for response
         sources = []
         for idx, (meta, distance) in enumerate(zip(metadatas, distances), 1):
@@ -193,13 +234,21 @@ ANSWER:"""
                 "relevance_score": float(1 - distance),  # Convert distance to similarity
                 "metadata": meta
             })
-        
+
+        total_time = time.time() - start_time
+        print(f"[RAG Query] Total query time: {total_time:.2f}s (search: {search_time:.2f}s, answer: {answer_time:.2f}s)")
+
         return {
             "question": question,
             "answer": answer,
             "sources": sources,
             "retrieved_docs": len(documents),
-            "filters_applied": filters
+            "filters_applied": filters,
+            "performance": {
+                "total_time": round(total_time, 2),
+                "search_time": round(search_time, 2),
+                "answer_time": round(answer_time, 2)
+            }
         }
 
     def batch_query(self, questions: List[str], **kwargs) -> List[Dict[str, Any]]:
