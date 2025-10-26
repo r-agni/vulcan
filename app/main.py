@@ -7,7 +7,7 @@ import json
 import cv2
 import os
 from typing import List, Optional
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 import threading
 
 from app.video import CameraManager, VideoOverlayRenderer
